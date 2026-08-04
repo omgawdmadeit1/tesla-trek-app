@@ -4,6 +4,11 @@ Capacitor wrapper that loads **https://www.tesla-trek.com** live (same pattern a
 
 When you ship a new web build to `tesla-trek.com`, TestFlight testers get it on next app open — no App Store resubmit required for content.
 
+## Live (Aug 2026)
+- Production: [https://www.tesla-trek.com](https://www.tesla-trek.com)
+- Car HUD: [https://www.tesla-trek.com/car](https://www.tesla-trek.com/car)
+- Companion: Hunt the Drive · Fund the Cyberbeast (TanStack Start)
+
 ## Requirements
 - macOS + Xcode 16+
 - Apple Developer team (LVL LTD / your team)
