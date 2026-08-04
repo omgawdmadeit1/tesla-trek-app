@@ -1,0 +1,48 @@
+{
+  "appId": "com.lvlltd.teslatrek",
+  "appName": "Tesla Trek",
+  "webDir": "native-shell",
+  "backgroundColor": "#050505",
+  "server": {
+    "url": "https://www.tesla-trek.com",
+    "cleartext": false,
+    "allowNavigation": [
+      "tesla-trek.com",
+      "www.tesla-trek.com",
+      "*.tesla-trek.com",
+      "*.vercel.app",
+      "cdn.jsdelivr.net",
+      "raw.githubusercontent.com",
+      "fonts.googleapis.com",
+      "fonts.gstatic.com",
+      "cdn.tailwindcss.com",
+      "cdnjs.cloudflare.com"
+    ]
+  },
+  "ios": {
+    "contentInset": "automatic",
+    "preferredContentMode": "mobile",
+    "scheme": "TeslaTrek",
+    "backgroundColor": "#050505",
+    "allowsLinkPreview": false,
+    "scrollEnabled": true
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 900,
+      "launchAutoHide": true,
+      "backgroundColor": "#050505",
+      "showSpinner": false,
+      "splashFullScreen": true,
+      "splashImmersive": true
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#050505"
+    },
+    "Keyboard": {
+      "resize": "body",
+      "resizeOnFullScreen": true
+    }
+  }
+}

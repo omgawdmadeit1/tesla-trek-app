@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <title>Tesla Trek</title>
+  <style>
+    html,body{margin:0;background:#050505;color:#f4f4f5;font-family:system-ui,-apple-system,sans-serif;min-height:100dvh}
+    .wrap{min-height:100dvh;display:grid;place-items:center;padding:2rem;text-align:center}
+    .brand{font-weight:700;letter-spacing:.16em;font-size:1.25rem}
+    .sub{color:#71717a;margin-top:.5rem;font-size:.9rem}
+    a{color:#5eead4}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div>
+      <div class="brand">TESLA TREK</div>
+      <p class="sub">Connecting to live hunt…</p>
+      <p style="margin-top:1.25rem"><a href="https://www.tesla-trek.com/">Open web companion</a></p>
+      <p style="margin-top:.75rem"><a href="https://www.tesla-trek.com/car">Open Car HUD</a></p>
+    </div>
+  </div>
+  <script>
+    // Capacitor server.url loads live site; this shell is offline fallback only.
+    if (!window.Capacitor) {
+      location.replace('https://www.tesla-trek.com/');
+    }
+  </script>
+</body>
+</html>

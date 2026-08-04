@@ -1,0 +1,5 @@
+node_modules
+ios
+.DS_Store
+*.log
+dist
