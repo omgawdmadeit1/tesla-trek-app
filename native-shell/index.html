@@ -1,32 +1,117 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>Tesla Trek</title>
   <style>
-    html,body{margin:0;background:#050505;color:#f4f4f5;font-family:system-ui,-apple-system,sans-serif;min-height:100dvh}
-    .wrap{min-height:100dvh;display:grid;place-items:center;padding:2rem;text-align:center}
-    .brand{font-weight:700;letter-spacing:.16em;font-size:1.25rem}
-    .sub{color:#71717a;margin-top:.5rem;font-size:.9rem}
-    a{color:#5eead4}
+    :root { --cyan:#00f0ff; --magenta:#ff00aa; --bg:#050510; --panel:rgba(8,12,28,0.88); }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:Segoe UI,system-ui,sans-serif; background:radial-gradient(1200px 600px at 20% 0%,#102040 0%,var(--bg) 55%); color:#e8f6ff; min-height:100dvh; padding-top:env(safe-area-inset-top); }
+    header { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; padding:14px 16px; border-bottom:1px solid rgba(0,240,255,.25); background:rgba(0,0,0,.35); position:sticky; top:0; z-index:20; }
+    .logo { letter-spacing:3px; color:var(--cyan); font-weight:700; }
+    .stats { display:flex; gap:12px; font-size:12px; }
+    .stats b { color:var(--cyan); }
+    nav { display:flex; flex-wrap:wrap; gap:6px; }
+    nav button, .btn { background:transparent; color:var(--cyan); border:1px solid var(--cyan); border-radius:999px; padding:8px 12px; cursor:pointer; }
+    .btn.primary { background:linear-gradient(135deg,var(--cyan),var(--magenta)); color:#041018; border:0; font-weight:700; }
+    main { max-width:1100px; margin:16px auto; padding:0 16px 80px; }
+    .card { background:var(--panel); border:1px solid rgba(0,240,255,.2); border-radius:16px; padding:20px; margin-bottom:16px; }
+    .hidden { display:none; }
+    label { display:block; margin:10px 0 6px; font-size:13px; color:#9adfff; }
+    input, select { width:100%; padding:10px 12px; border-radius:10px; border:1px solid rgba(0,240,255,.35); background:#0b1220; color:#fff; }
+    .row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .quest, .reward { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:12px; margin-top:10px; border:1px solid rgba(0,240,255,.18); border-radius:12px; }
+    .toast { position:fixed; bottom:18px; right:18px; background:#041820; border:1px solid var(--cyan); padding:10px 14px; border-radius:10px; display:none; z-index:50; }
+    .progress { height:8px; background:#132033; border-radius:99px; overflow:hidden; margin-top:8px; }
+    .progress > span { display:block; height:100%; background:linear-gradient(90deg,var(--cyan),var(--magenta)); }
+    @media (max-width:700px){ .row { grid-template-columns:1fr; } header { align-items:flex-start; } }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div>
-      <div class="brand">TESLA TREK</div>
-      <p class="sub">Connecting to live hunt…</p>
-      <p style="margin-top:1.25rem"><a href="https://www.tesla-trek.com/">Open web companion</a></p>
-      <p style="margin-top:.75rem"><a href="https://www.tesla-trek.com/car">Open Car HUD</a></p>
-    </div>
-  </div>
+  <header>
+    <div class="logo">TESLA TREK</div>
+    <div class="stats"><span>XP <b id="xp">1250</b></span><span>Battery <b id="battery">78%</b></span><span>Vehicle <b id="vehicleName">Not linked</b></span></div>
+    <nav>
+      <button onclick="show('landing')">Home</button>
+      <button onclick="show('connect')">Connect</button>
+      <button onclick="show('dashboard')">Dash</button>
+      <button onclick="show('quests')">Quests</button>
+      <button onclick="show('map')">Map</button>
+      <button onclick="show('vehicle')">Vehicle</button>
+      <button onclick="show('rewards')">Rewards</button>
+    </nav>
+  </header>
+  <main>
+    <section id="landing" class="card">
+      <h1>Epic Adventures Powered by Your Tesla</h1>
+      <p>Location-based quests. Gamified drives. XYO-verified rewards.</p>
+      <p style="margin:14px 0">Bundled Capacitor prototype. Sandbox connect only — no live vehicle commands.</p>
+      <button class="btn primary" onclick="show('connect')">Connect Your Tesla</button>
+    </section>
+    <section id="connect" class="card hidden">
+      <h2>Secure Tesla Link (Simulated Fleet API)</h2>
+      <form id="connectForm">
+        <div class="row">
+          <div><label>Driver name</label><input id="driverName" value="Alex" required /></div>
+          <div><label>Vehicle model</label>
+            <select id="model">
+              <option>Cybertruck Cyberbeast</option>
+              <option>Model Y</option>
+              <option>Model 3 Performance</option>
+              <option>Model S Plaid</option>
+            </select>
+          </div>
+        </div>
+        <label>VIN (demo only)</label>
+        <input id="vin" value="5YJ3E1EA7LF000001" />
+        <button class="btn primary" type="submit" style="margin-top:16px">Authorize & Link Vehicle</button>
+      </form>
+      <p id="connectStatus"></p>
+    </section>
+    <section id="dashboard" class="card hidden">
+      <h2>Welcome back, <span id="dashName">Alex</span></h2>
+      <p>Vehicle: <b id="dashVehicle">—</b></p>
+      <div class="progress"><span id="batteryBar" style="width:78%"></span></div>
+      <div class="quest"><div><strong>Active Quest: Cyberpunk Sentinel</strong><div>85% complete</div></div><button class="btn" onclick="show('map')">Continue Hunt</button></div>
+    </section>
+    <section id="quests" class="card hidden">
+      <h2>Treasure Hunt Board</h2>
+      <div class="quest"><div><strong>Glacier Assault</strong><div>300 XP</div></div><button class="btn" onclick="completeQuest(300,'Glacier Assault')">Complete</button></div>
+      <div class="quest"><div><strong>Canyon Carnage</strong><div>750 XP</div></div><button class="btn" onclick="completeQuest(750,'Canyon Carnage')">Complete</button></div>
+      <div class="quest"><div><strong>Volcanic Overdrive</strong><div>400 XP</div></div><button class="btn" onclick="completeQuest(400,'Volcanic Overdrive')">Complete</button></div>
+    </section>
+    <section id="map" class="card hidden">
+      <h2>Live Map + XYO Proof</h2>
+      <p>Wawona, CA · Bound-witness: <b id="xyo">pending</b></p>
+      <button class="btn primary" onclick="verifyXYO()">Verify location with XYO</button>
+    </section>
+    <section id="vehicle" class="card hidden">
+      <h2>Performance Mode</h2>
+      <p>0–60 2.6s · 845 hp</p>
+      <button class="btn" onclick="nudgeBattery(-3)">Drive pulse</button>
+      <button class="btn" onclick="nudgeBattery(8)">Supercharge</button>
+    </section>
+    <section id="rewards" class="card hidden">
+      <h2>Rewards</h2>
+      <div class="reward"><span>Neon Trail Badge</span><button class="btn" onclick="claim('Neon Trail Badge',200)">Claim 200 XP</button></div>
+      <div class="reward"><span>XYO Sentinel Chest</span><button class="btn" onclick="claim('XYO Sentinel Chest',500)">Claim 500 XP</button></div>
+      <p>Completed hunts: <b id="completed">0</b></p>
+    </section>
+  </main>
+  <div class="toast" id="toast"></div>
   <script>
-    // Capacitor server.url loads live site; this shell is offline fallback only.
-    if (!window.Capacitor) {
-      location.replace('https://www.tesla-trek.com/');
-    }
+    const state = { xp:1250, battery:78, vehicle:'Not linked', connected:false, completed:0, claimed:{} };
+    function show(id){ document.querySelectorAll('main > section').forEach(s=>s.classList.add('hidden')); document.getElementById(id).classList.remove('hidden'); }
+    function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.style.display='block'; setTimeout(()=>t.style.display='none',2200); }
+    function render(){ document.getElementById('xp').textContent=state.xp; document.getElementById('battery').textContent=state.battery+'%'; document.getElementById('vehicleName').textContent=state.vehicle; document.getElementById('dashVehicle').textContent=state.vehicle; document.getElementById('batteryBar').style.width=state.battery+'%'; document.getElementById('completed').textContent=state.completed; }
+    document.getElementById('connectForm').addEventListener('submit', e=>{ e.preventDefault(); const name=document.getElementById('driverName').value.trim(); const model=document.getElementById('model').value; state.connected=true; state.vehicle=model; document.getElementById('dashName').textContent=name||'Alex'; document.getElementById('connectStatus').textContent='Linked (sandbox).'; render(); toast('Tesla linked: '+model); show('dashboard'); });
+    function completeQuest(xp,name){ if(!state.connected){ toast('Connect a Tesla first'); show('connect'); return;} state.xp+=xp; state.completed+=1; state.battery=Math.max(12,state.battery-6); render(); toast(name+' complete +'+xp+' XP'); }
+    function verifyXYO(){ document.getElementById('xyo').textContent='verified bound witness'; state.xp+=50; render(); toast('XYO proof +50 XP'); }
+    function nudgeBattery(n){ state.battery=Math.min(100,Math.max(5,state.battery+n)); render(); }
+    function claim(name,xp){ if(state.claimed[name]){ toast('Already claimed'); return;} state.claimed[name]=true; state.xp+=xp; render(); toast('Claimed '+name); }
+    render();
   </script>
 </body>
 </html>
