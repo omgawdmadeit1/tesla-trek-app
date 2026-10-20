@@ -53,13 +53,17 @@ platform :ios do
       cert_id = lane_context[SharedValues::CERT_CERTIFICATE_ID] || ENV["CER_CERTIFICATE_ID"]
       UI.user_error!("cert did not return a certificate id") if cert_id.to_s.empty?
 
+      identity_dump = sh("security", "find-identity", "-v", "-p", "codesigning", keychain_path, log: false)
+      distribution_identity = identity_dump[/"(Apple Distribution:[^"]+)"/, 1]
+      UI.user_error!("The distribution certificate is not in the temporary keychain") if distribution_identity.to_s.empty?
+
+      # Omit development and adhoc. Passing false still counts as setting
+      # both options, and sigh rejects that pair. Defaults are the App Store profile.
       sigh(
         api_key: api_key,
         app_identifier: app_identifier,
         team_id: team_id,
         platform: "ios",
-        development: false,
-        adhoc: false,
         force: true,
         cert_id: cert_id,
         provisioning_name: profile_name,
@@ -76,7 +80,7 @@ platform :ios do
         path: "ios/App/App.xcodeproj",
         team_id: team_id,
         bundle_identifier: app_identifier,
-        code_sign_identity: "Apple Distribution",
+        code_sign_identity: distribution_identity,
         profile_name: installed_profile,
         targets: ["App"]
       )
@@ -90,12 +94,11 @@ platform :ios do
         export_team_id: team_id,
         output_directory: signing_dir,
         output_name: "Tr3k.ipa",
-        codesigning_identity: "Apple Distribution",
+        codesigning_identity: distribution_identity,
         xcargs: [
           "DEVELOPMENT_TEAM=#{team_id}",
           "CURRENT_PROJECT_VERSION=#{build_number}",
           "CODE_SIGN_STYLE=Manual",
-          "CODE_SIGN_IDENTITY='Apple Distribution'",
           "PROVISIONING_PROFILE_SPECIFIER=#{installed_profile}",
           "PRODUCT_BUNDLE_IDENTIFIER=#{app_identifier}"
         ].join(" "),
@@ -103,7 +106,7 @@ platform :ios do
           method: "app-store",
           teamID: team_id,
           signingStyle: "manual",
-          signingCertificate: "Apple Distribution",
+          signingCertificate: distribution_identity,
           provisioningProfiles: {
             app_identifier => installed_profile
           }
@@ -213,10 +216,11 @@ platform :ios do
 
   private_lane :revoke_one_distribution_certificate do
     certificates = Spaceship::ConnectAPI::Certificate.all(filter: { certificateType: "DISTRIBUTION" })
-    target = certificates.find { |certificate| certificate.respond_to?(:valid?) && !certificate.valid? }
-    target ||= certificates.first
-    UI.user_error!("No distribution certificate is available to replace.") if target.nil?
+    UI.user_error!("No distribution certificate is available to replace.") if certificates.empty?
 
+    # The newest certificate is the one a previous runner created and then
+    # discarded with its keychain. Older certificates stay in place.
+    target = certificates.max_by { |certificate| certificate.expiration_date.to_s }
     certificate_id = target.id
     target.delete!
     certificate_id
