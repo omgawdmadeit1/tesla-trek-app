@@ -88,7 +88,6 @@ jobs:
           with Path(os.environ["GITHUB_ENV"]).open("a") as handle:
               handle.write(f"ASC_KEY_PATH={path}\n")
               handle.write(f"BUILD_NUMBER={build_number}\n")
-              handle.write(f"KEYCHAIN_PASSWORD={os.urandom(24).hex()}\n")
           print(f"API key file ready ({path.stat().st_size} bytes). Build number {build_number}.")
           PY
 

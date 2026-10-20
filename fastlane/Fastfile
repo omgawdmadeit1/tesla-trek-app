@@ -1,6 +1,9 @@
 require "fileutils"
+require "securerandom"
 require "shellwords"
 require "tmpdir"
+
+opt_out_usage
 
 default_platform(:ios)
 
@@ -19,7 +22,8 @@ platform :ios do
     app_identifier = "app.tr3k.ios"
     profile_name = "tr3k-appstore"
     keychain_name = "tr3k-signing"
-    keychain_password = ENV.fetch("KEYCHAIN_PASSWORD")
+    keychain_password = ENV["KEYCHAIN_PASSWORD"].to_s
+    keychain_password = SecureRandom.hex(24) if keychain_password.empty?
     build_number = ENV.fetch("BUILD_NUMBER")
     UI.user_error!("BUILD_NUMBER must be a number") unless build_number.match?(/\A\d+\z/)
 
@@ -34,17 +38,9 @@ platform :ios do
         signing_dir: signing_dir
       )
 
-      # The App Store Connect record already exists. This only registers the
-      # bundle id on the developer portal when sigh would otherwise miss it.
-      produce(
-        api_key: api_key,
-        app_identifier: app_identifier,
-        app_name: "Tr3k",
-        language: "English",
-        sku: "app.tr3k.ios",
-        team_id: team_id,
-        skip_itc: true
-      )
+      # The App Store Connect record already exists. Register the bundle id
+      # on the developer portal when sigh would otherwise miss it.
+      ensure_bundle_id(app_identifier: app_identifier)
 
       install_distribution_certificate(
         api_key: api_key,
@@ -168,6 +164,21 @@ platform :ios do
     sh("security", "import", wwdr, "-k", keychain_path, "-T", "/usr/bin/codesign", "-T", "/usr/bin/security")
 
     keychain_path
+  end
+
+  private_lane :ensure_bundle_id do |options|
+    identifier = options[:app_identifier]
+    existing = Spaceship::ConnectAPI::BundleId.find(identifier)
+    if existing
+      UI.message("Bundle id #{identifier} is already registered.")
+    else
+      Spaceship::ConnectAPI::BundleId.create(
+        name: "Tr3k",
+        platform: "IOS",
+        identifier: identifier
+      )
+      UI.success("Registered bundle id #{identifier}.")
+    end
   end
 
   private_lane :install_distribution_certificate do |options|
