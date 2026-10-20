@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#14110e" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <title>Tr3k</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div>
+        <p class="brand">Tr3k</p>
+        <p class="when">Buford Launch · Sat Oct 24</p>
+      </div>
+      <div class="top-actions">
+        <button id="locate" class="btn ghost" type="button">Find me</button>
+        <button id="drive" class="btn" type="button" aria-pressed="false">Driving mode</button>
+      </div>
+    </header>
+    <div id="map"></div>
+    <section id="sheet" class="sheet">
+      <p id="progress" class="kicker">0 of 2 stops</p>
+      <h1 id="stop-name">Buford Drive sidewalk</h1>
+      <p id="stop-detail"></p>
+      <p id="stop-meta" class="meta"></p>
+      <div class="actions">
+        <button id="checkin" class="btn primary" type="button">Check in</button>
+        <button id="demo" class="btn" type="button">Demo mode — check in from anywhere</button>
+      </div>
+      <p class="fine">
+        Pickup is 250 m, so the sidewalk, the lot, or a passing car all count. Park before you crack the cookie.
+        Tr3k is independent and is not affiliated with, endorsed by, or sponsored by any vehicle maker, charging network, or shopping center.
+        Rewards are in-app collectibles with no cash value.
+      </p>
+    </section>
+    <section id="park" class="gate hidden">
+      <p class="kicker">Driving</p>
+      <h2>Park safely first</h2>
+      <p>Pull over and park. The cookie stays closed while the car is moving.</p>
+      <button id="parked" class="btn primary" type="button">I'm parked</button>
+      <button id="keep-driving" class="btn ghost" type="button">Not yet</button>
+    </section>
+    <section id="reveal" class="gate hidden">
+      <div id="reveal-card"></div>
+      <button id="reveal-pack" class="btn primary" type="button">Open pack</button>
+      <button id="reveal-trek" class="btn ghost" type="button">Back to the trek</button>
+    </section>
+    <section id="pack" class="sheet pack hidden">
+      <p class="kicker">Pack</p>
+      <h1>Your collectibles</h1>
+      <div id="pack-list"></div>
+      <p class="fine">In-app only. No cash value.</p>
+    </section>
+    <nav class="tabs">
+      <button id="tab-trek" type="button" aria-pressed="true">Trek</button>
+      <button id="tab-pack" type="button" aria-pressed="false">Pack</button>
+    </nav>
+    <div id="toast" role="status"></div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

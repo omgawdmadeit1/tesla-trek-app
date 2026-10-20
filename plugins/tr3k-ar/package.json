@@ -1,0 +1,11 @@
+{
+  "name": "tr3k-ar",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Places a fortune cookie in ARKit and cracks it open.",
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  }
+}

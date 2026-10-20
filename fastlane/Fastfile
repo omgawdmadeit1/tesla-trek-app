@@ -1,0 +1,59 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Archive Tr3k and upload it to TestFlight"
+  lane :beta do
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("ASC_KEY_ID"),
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      key_content: ENV.fetch("ASC_KEY_P8"),
+      duration: 1200,
+      in_house: false
+    )
+
+    use_match = !ENV["MATCH_GIT_URL"].to_s.empty?
+    key_path = ENV.fetch("ASC_KEY_PATH")
+    build_number = ENV.fetch("BUILD_NUMBER")
+    auth = [
+      "-allowProvisioningUpdates",
+      "-authenticationKeyPath \"#{key_path}\"",
+      "-authenticationKeyID #{ENV.fetch("ASC_KEY_ID")}",
+      "-authenticationKeyIssuerID #{ENV.fetch("ASC_ISSUER_ID")}"
+    ].join(" ")
+
+    if use_match
+      match(
+        type: "appstore",
+        readonly: false,
+        app_identifier: "app.tr3k.ios",
+        git_url: ENV.fetch("MATCH_GIT_URL"),
+        git_basic_authorization: ENV["MATCH_GIT_BASIC_AUTHORIZATION"],
+        api_key: api_key,
+        team_id: "DQA38RTNF7",
+        keychain_name: "tr3k-signing",
+        keychain_password: ENV.fetch("KEYCHAIN_PASSWORD")
+      )
+    end
+
+    build_app(
+      project: "ios/App/App.xcodeproj",
+      scheme: "App",
+      configuration: "Release",
+      export_method: "app-store",
+      export_team_id: "DQA38RTNF7",
+      clean: true,
+      output_directory: "build",
+      output_name: "Tr3k.ipa",
+      xcargs: "#{auth} DEVELOPMENT_TEAM=DQA38RTNF7 CURRENT_PROJECT_VERSION=#{build_number} CODE_SIGN_STYLE=#{use_match ? "Manual" : "Automatic"}"
+    )
+
+    upload_to_testflight(
+      api_key: api_key,
+      app_identifier: "app.tr3k.ios",
+      apple_id: "6824752752",
+      skip_waiting_for_build_processing: true,
+      skip_submission: true,
+      uses_non_exempt_encryption: false
+    )
+  end
+end
