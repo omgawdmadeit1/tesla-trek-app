@@ -17,3 +17,7 @@ fastlane/test_output
 *.ipa
 *.dSYM.zip
 *.dSYM
+*.p12
+*.cer
+*.mobileprovision
+*.certSigningRequest

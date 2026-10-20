@@ -58,28 +58,17 @@ Joseph builds on the macOS GitHub Actions runner. Workflow: `.github/workflows/t
 
 ### Secrets that must be set
 
-App Store Connect API key (Account Holder on the individual team):
+App Store Connect API key (Admin on team `DQA38RTNF7`):
 
 - `ASC_KEY_ID`
 - `ASC_ISSUER_ID`
 - `ASC_KEY_P8` — raw PEM, including the BEGIN and END lines
 
-And one signing path:
-
-**Certificate already exported**
-
-- `BUILD_CERTIFICATE_BASE64` — base64 of the Apple Distribution `.p12`
-- `P12_PASSWORD`
-
-**Or fastlane match**, which can create the certificate on the runner and store it in a private repo (no Mac required at the desk):
-
-- `MATCH_GIT_URL` — private git URL for the cert repo
-- `MATCH_PASSWORD`
-- `MATCH_GIT_BASIC_AUTHORIZATION` — base64 of `x-access-token:<github-pat>` when the URL is https
+The TestFlight job uses that key with `cert` and `sigh` to create an Apple Distribution certificate and an App Store profile for `app.tr3k.ios` in a temporary keychain, then archives and uploads. No p12 and no match repo are required. Each fresh runner that does not already have the certificate's private key creates a distribution certificate. Apple caps how many of those a team can hold.
 
 Optional, for the Pages deploy step:
 
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
 
-No secret values live in this repo. The TestFlight job stops with the missing names if they are unset. The bundle id on the App Store Connect app must be `app.tr3k.ios`. The home-screen name in the binary is Tr3k.
+No secret values live in this repo. The TestFlight job stops with the missing names if the API key is unset. The bundle id on the App Store Connect app must be `app.tr3k.ios`. The home-screen name in the binary is Tr3k.
