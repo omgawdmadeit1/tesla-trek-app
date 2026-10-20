@@ -72,8 +72,11 @@ platform :ios do
         filename: "tr3k-appstore.mobileprovision"
       )
 
-      installed_profile = lane_context[SharedValues::SIGH_NAME]
-      installed_profile = profile_name if installed_profile.to_s.empty?
+      # sigh appends a timestamp when the requested name is taken, and that
+      # value contains a space. Pass the profile UUID, which is one token.
+      profile_uuid = lane_context[SharedValues::SIGH_UUID] || ENV["SIGH_UUID"]
+      UI.user_error!("sigh did not return a profile UUID") if profile_uuid.to_s.empty?
+      UI.user_error!("Profile UUID must not contain spaces") if profile_uuid.match?(/\s/)
 
       update_code_signing_settings(
         use_automatic_signing: false,
@@ -81,7 +84,7 @@ platform :ios do
         team_id: team_id,
         bundle_identifier: app_identifier,
         code_sign_identity: distribution_identity,
-        profile_name: installed_profile,
+        profile_name: profile_uuid,
         targets: ["App"]
       )
 
@@ -99,7 +102,7 @@ platform :ios do
           "DEVELOPMENT_TEAM=#{team_id}",
           "CURRENT_PROJECT_VERSION=#{build_number}",
           "CODE_SIGN_STYLE=Manual",
-          "PROVISIONING_PROFILE_SPECIFIER=#{installed_profile}",
+          "PROVISIONING_PROFILE_SPECIFIER=#{profile_uuid}",
           "PRODUCT_BUNDLE_IDENTIFIER=#{app_identifier}"
         ].join(" "),
         export_options: {
@@ -108,7 +111,7 @@ platform :ios do
           signingStyle: "manual",
           signingCertificate: distribution_identity,
           provisioningProfiles: {
-            app_identifier => installed_profile
+            app_identifier => profile_uuid
           }
         }
       )
