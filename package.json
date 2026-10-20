@@ -1,20 +1,34 @@
 {
-  "name": "tesla-trek-app",
+  "name": "tr3k",
   "private": true,
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "ios:sync": "npx cap sync ios",
-    "ios:open": "npx cap open ios",
-    "ios:add": "npx cap add ios"
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 4173",
+    "test": "node scripts/check.mjs",
+    "qr": "node scripts/make-qr-card.mjs",
+    "ios:add": "npx cap add ios",
+    "ios:sync": "npm run build && npx cap sync ios"
   },
   "dependencies": {
     "@capacitor/app": "8.1.1",
-    "@capacitor/cli": "8.5.0",
     "@capacitor/core": "8.5.0",
+    "@capacitor/geolocation": "8.1.0",
     "@capacitor/haptics": "8.0.2",
     "@capacitor/ios": "8.5.0",
     "@capacitor/keyboard": "8.0.5",
     "@capacitor/splash-screen": "8.0.2",
-    "@capacitor/status-bar": "8.0.3"
+    "@capacitor/status-bar": "8.0.3",
+    "leaflet": "1.9.4",
+    "three": "0.170.0",
+    "tr3k-ar": "file:plugins/tr3k-ar"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.0",
+    "@resvg/resvg-js": "2.6.2",
+    "qrcode": "1.5.4",
+    "vite": "6.4.1"
   }
 }

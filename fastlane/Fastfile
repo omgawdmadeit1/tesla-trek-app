@@ -1,0 +1,228 @@
+require "fileutils"
+require "securerandom"
+require "shellwords"
+require "tmpdir"
+
+opt_out_usage
+
+default_platform(:ios)
+
+platform :ios do
+  desc "Archive Tr3k and upload it to TestFlight using the App Store Connect API key"
+  lane :beta do
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("ASC_KEY_ID"),
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      key_filepath: ENV.fetch("ASC_KEY_PATH"),
+      duration: 1200,
+      in_house: false
+    )
+
+    team_id = "DQA38RTNF7"
+    app_identifier = "app.tr3k.ios"
+    profile_name = "tr3k-appstore"
+    keychain_name = "tr3k-signing"
+    keychain_password = ENV["KEYCHAIN_PASSWORD"].to_s
+    keychain_password = SecureRandom.hex(24) if keychain_password.empty?
+    build_number = ENV.fetch("BUILD_NUMBER")
+    UI.user_error!("BUILD_NUMBER must be a number") unless build_number.match?(/\A\d+\z/)
+
+    signing_dir = File.join(ENV.fetch("RUNNER_TEMP", Dir.tmpdir), "tr3k-signing")
+    FileUtils.mkdir_p(signing_dir)
+    keychain_path = nil
+
+    begin
+      keychain_path = prepare_signing_keychain(
+        name: keychain_name,
+        password: keychain_password,
+        signing_dir: signing_dir
+      )
+
+      # The App Store Connect record already exists. Register the bundle id
+      # on the developer portal when sigh would otherwise miss it.
+      ensure_bundle_id(app_identifier: app_identifier)
+
+      install_distribution_certificate(
+        api_key: api_key,
+        team_id: team_id,
+        keychain_path: keychain_path,
+        keychain_password: keychain_password,
+        signing_dir: signing_dir
+      )
+
+      cert_id = lane_context[SharedValues::CERT_CERTIFICATE_ID] || ENV["CER_CERTIFICATE_ID"]
+      UI.user_error!("cert did not return a certificate id") if cert_id.to_s.empty?
+
+      identity_dump = sh("security", "find-identity", "-v", "-p", "codesigning", keychain_path, log: false)
+      distribution_identity = identity_dump[/"(Apple Distribution:[^"]+)"/, 1]
+      UI.user_error!("The distribution certificate is not in the temporary keychain") if distribution_identity.to_s.empty?
+
+      # Omit development and adhoc. Passing false still counts as setting
+      # both options, and sigh rejects that pair. Defaults are the App Store profile.
+      sigh(
+        api_key: api_key,
+        app_identifier: app_identifier,
+        team_id: team_id,
+        platform: "ios",
+        force: true,
+        cert_id: cert_id,
+        provisioning_name: profile_name,
+        ignore_profiles_with_different_name: true,
+        output_path: signing_dir,
+        filename: "tr3k-appstore.mobileprovision"
+      )
+
+      installed_profile = lane_context[SharedValues::SIGH_NAME]
+      installed_profile = profile_name if installed_profile.to_s.empty?
+
+      update_code_signing_settings(
+        use_automatic_signing: false,
+        path: "ios/App/App.xcodeproj",
+        team_id: team_id,
+        bundle_identifier: app_identifier,
+        code_sign_identity: distribution_identity,
+        profile_name: installed_profile,
+        targets: ["App"]
+      )
+
+      build_app(
+        project: "ios/App/App.xcodeproj",
+        scheme: "App",
+        configuration: "Release",
+        clean: true,
+        export_method: "app-store",
+        export_team_id: team_id,
+        output_directory: signing_dir,
+        output_name: "Tr3k.ipa",
+        codesigning_identity: distribution_identity,
+        xcargs: [
+          "DEVELOPMENT_TEAM=#{team_id}",
+          "CURRENT_PROJECT_VERSION=#{build_number}",
+          "CODE_SIGN_STYLE=Manual",
+          "PROVISIONING_PROFILE_SPECIFIER=#{installed_profile}",
+          "PRODUCT_BUNDLE_IDENTIFIER=#{app_identifier}"
+        ].join(" "),
+        export_options: {
+          method: "app-store",
+          teamID: team_id,
+          signingStyle: "manual",
+          signingCertificate: distribution_identity,
+          provisioningProfiles: {
+            app_identifier => installed_profile
+          }
+        }
+      )
+
+      ipa_path = lane_context[SharedValues::IPA_OUTPUT_PATH]
+      UI.user_error!("The archive did not produce an ipa") if ipa_path.to_s.empty? || !File.exist?(ipa_path)
+
+      app_store_connect_api_key(
+        key_id: ENV.fetch("ASC_KEY_ID"),
+        issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+        key_filepath: ENV.fetch("ASC_KEY_PATH"),
+        duration: 1200,
+        in_house: false
+      )
+
+      upload_to_testflight(
+        api_key: lane_context[SharedValues::APP_STORE_CONNECT_API_KEY],
+        app_identifier: app_identifier,
+        apple_id: "6824752752",
+        ipa: ipa_path,
+        skip_waiting_for_build_processing: true,
+        skip_submission: true,
+        uses_non_exempt_encryption: false
+      )
+
+      UI.success("Uploaded Tr3k build #{build_number} to TestFlight")
+    ensure
+      begin
+        delete_keychain(name: keychain_name) if keychain_path && File.exist?(keychain_path)
+      rescue StandardError
+        UI.important("Temporary keychain was left for the runner to discard.")
+      end
+    end
+  end
+
+  private_lane :prepare_signing_keychain do |options|
+    create_keychain(
+      name: options[:name],
+      password: options[:password],
+      default_keychain: true,
+      unlock: true,
+      timeout: 3600,
+      lock_when_sleeps: false,
+      add_to_search_list: true
+    )
+
+    base = File.expand_path("~/Library/Keychains/#{options[:name]}")
+    keychain_path = ["#{base}-db", base].find { |candidate| File.exist?(candidate) }
+    UI.user_error!("Temporary keychain was not created") if keychain_path.nil?
+
+    sh("security", "list-keychains", "-d", "user", "-s", keychain_path)
+    sh("security", "default-keychain", "-s", keychain_path)
+
+    wwdr = File.join(options[:signing_dir], "AppleWWDRCAG3.cer")
+    sh("curl", "-fsSL", "-o", wwdr, "https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer")
+    sh("security", "import", wwdr, "-k", keychain_path, "-T", "/usr/bin/codesign", "-T", "/usr/bin/security")
+
+    keychain_path
+  end
+
+  private_lane :ensure_bundle_id do |options|
+    identifier = options[:app_identifier]
+    existing = Spaceship::ConnectAPI::BundleId.find(identifier)
+    if existing
+      UI.message("Bundle id #{identifier} is already registered.")
+    else
+      Spaceship::ConnectAPI::BundleId.create(
+        name: "Tr3k",
+        platform: "IOS",
+        identifier: identifier
+      )
+      UI.success("Registered bundle id #{identifier}.")
+    end
+  end
+
+  private_lane :install_distribution_certificate do |options|
+    attempts = 0
+    begin
+      attempts += 1
+      cert(
+        api_key: options[:api_key],
+        team_id: options[:team_id],
+        development: false,
+        generate_apple_certs: true,
+        force: false,
+        keychain_path: options[:keychain_path],
+        keychain_password: options[:keychain_password],
+        output_path: options[:signing_dir],
+        platform: "ios"
+      )
+    rescue StandardError => error
+      reached_limit = error.message.to_s.include?("maximum number of available")
+      raise unless attempts == 1 && reached_limit
+
+      revoked = revoke_one_distribution_certificate
+      UI.important("Revoked distribution certificate #{revoked}. Its private key is not on this runner, so it could not sign the build.")
+      retry
+    end
+
+    sh(
+      "security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k #{options[:keychain_password].shellescape} #{options[:keychain_path].shellescape}",
+      log: false
+    )
+  end
+
+  private_lane :revoke_one_distribution_certificate do
+    certificates = Spaceship::ConnectAPI::Certificate.all(filter: { certificateType: "DISTRIBUTION" })
+    UI.user_error!("No distribution certificate is available to replace.") if certificates.empty?
+
+    # The newest certificate is the one a previous runner created and then
+    # discarded with its keychain. Older certificates stay in place.
+    target = certificates.max_by { |certificate| certificate.expiration_date.to_s }
+    certificate_id = target.id
+    target.delete!
+    certificate_id
+  end
+end

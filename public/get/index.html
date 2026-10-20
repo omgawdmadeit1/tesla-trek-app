@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Get Tr3k</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        background: #14110e;
+        color: #f4ecdf;
+        font-family: "Avenir Next", "Segoe UI", sans-serif;
+      }
+      main { max-width: 28rem; padding: 32px 20px; }
+      h1 {
+        font-family: Palatino, Georgia, serif;
+        font-size: 3rem;
+        margin: 0 0 8px;
+        color: #e2a53a;
+      }
+      a { color: #e2a53a; }
+      p { line-height: 1.45; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Tr3k</h1>
+      <p id="status">Opening Tr3k…</p>
+      <p><a id="web" href="/">Play in the browser</a></p>
+      <p><a id="flight" href="">iPhone beta</a></p>
+    </main>
+    <script type="module">
+      import { TESTFLIGHT_URL } from "./testflight.js";
+      const flight = document.querySelector("#flight");
+      const status = document.querySelector("#status");
+      flight.href = TESTFLIGHT_URL;
+      const isIPhone = /iPhone|iPod/.test(navigator.userAgent);
+      const configured = !TESTFLIGHT_URL.includes("REPLACE_ME");
+      if (isIPhone && configured) {
+        status.textContent = "Opening the iPhone beta…";
+        location.replace(TESTFLIGHT_URL);
+      } else if (!isIPhone) {
+        status.textContent = "Opening the web app…";
+        location.replace("/");
+      } else {
+        status.textContent = "The iPhone beta link is not set yet. Play in the browser, or ask for the TestFlight code.";
+      }
+    </script>
+  </body>
+</html>

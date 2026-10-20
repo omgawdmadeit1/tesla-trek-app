@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  web:
+    name: Web build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tr3k-web
+          path: dist
+          if-no-files-found: error
+
+  pages:
+    name: Cloudflare Pages
+    runs-on: ubuntu-latest
+    needs: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "Cloudflare secrets are not set. The dist artifact is the Pages output."
+            echo "Connect tr3k.app with build command 'npm run build' and output directory 'dist', or set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID."
+            exit 0
+          fi
+          npx --yes wrangler@3 pages deploy dist --project-name tr3k --commit-dirty=true
