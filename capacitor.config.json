@@ -28,5 +28,14 @@
       "resize": "body",
       "resizeOnFullScreen": true
     }
+  },
+  "server": {
+    "url": "https://tr3k.app/play/",
+    "allowNavigation": [
+      "tr3k.app",
+      "*.tile.openstreetmap.org",
+      "router.project-osrm.org",
+      "unpkg.com"
+    ]
   }
 }
