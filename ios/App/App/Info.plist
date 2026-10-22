@@ -67,11 +67,11 @@
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Tr3k uses the camera to place a fortune cookie in front of you and crack it open.</string>
+	<string>Tr3k uses the camera to show the treasure in front of you so you can open it.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Tr3k uses your location to check you in when you reach a trek stop.</string>
+	<string>Tr3k uses your location to list nearby treasure hunts, give directions, and check you in when you arrive.</string>
 	<key>NSMotionUsageDescription</key>
-	<string>Tr3k uses motion so the cookie stays put while you look around.</string>
+	<string>Tr3k uses motion so the treasure stays put while you look around.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 </dict>
