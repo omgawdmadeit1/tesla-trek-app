@@ -67,11 +67,13 @@
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Tr3k uses the camera to show the treasure in front of you so you can open it.</string>
+	<string>Tr3k uses your camera to show the treasure in front of you so you can open it. Nothing is recorded or uploaded.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Tr3k uses your location to list nearby treasure hunts, give directions, and check you in when you arrive.</string>
+	<string>Tr3k uses your location to show nearby treasure hunts, give turn-by-turn directions, and confirm you have arrived.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Tr3k uses your location to show nearby treasure hunts, give directions, and confirm you have arrived. Tr3k only needs your location while you are using the app.</string>
 	<key>NSMotionUsageDescription</key>
-	<string>Tr3k uses motion so the treasure stays put while you look around.</string>
+	<string>Tr3k uses your phone's motion sensors so the treasure stays in place while you look around in AR.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 </dict>
