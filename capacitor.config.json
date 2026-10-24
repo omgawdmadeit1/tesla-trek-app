@@ -35,7 +35,9 @@
       "tr3k.app",
       "*.tile.openstreetmap.org",
       "router.project-osrm.org",
-      "unpkg.com"
+      "unpkg.com",
+      "cdn.apple-mapkit.com",
+      "*.apple-mapkit.com"
     ]
   }
 }

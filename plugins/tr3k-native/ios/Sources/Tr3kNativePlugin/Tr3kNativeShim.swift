@@ -2,6 +2,7 @@ import Foundation
 
 /// Injected at document start into every page the shell loads (including https://tr3k.app/play).
 /// Exposes window.tr3kNative and upgrades navigator.geolocation to native Core Location.
+/// Map methods (shim version 2) are documented in plugins/tr3k-native/README.md.
 enum Tr3kNativeShim {
     static let source = #"""
 (function () {
@@ -47,10 +48,15 @@ enum Tr3kNativeShim {
     var code = /denied/i.test(msg) ? 1 : /timeout/i.test(msg) ? 3 : 2;
     return { code: code, message: msg, PERMISSION_DENIED: 1, POSITION_UNAVAILABLE: 2, TIMEOUT: 3 };
   }
+  function listen(event, cb) {
+    var p = plugin();
+    if (!p || typeof p.addListener !== "function") return null;
+    return p.addListener(event, cb);
+  }
   var api = {
     __native: true,
     platform: "ios",
-    version: 1,
+    version: 2,
     getLocation: function (opts) { return call("getLocation", opts).then(toPosition); },
     watchLocation: function (onPos, onErr) {
       var id = nextId++;
@@ -76,7 +82,42 @@ enum Tr3kNativeShim {
       return p.addListener("arrival", cb);
     },
     isARSupported: function () { return call("isARSupported", {}).then(function (r) { return !!(r && r.supported); }); },
-    openAR: function (opts) { return call("openAR", opts || {}); }
+    openAR: function (opts) { return call("openAR", opts || {}); },
+    isNativeMapSupported: function () {
+      var p = plugin();
+      if (!p || typeof p.isNativeMapSupported !== "function") return Promise.resolve(false);
+      return call("isNativeMapSupported", {}).then(function (r) { return !!(r && r.supported); }).catch(function () { return false; });
+    },
+    showMap: function (opts) { return call("showMap", opts || {}); },
+    hideMap: function () { return call("hideMap", {}); },
+    setMapType: function (type) {
+      if (type && typeof type === "object") return call("setMapType", type);
+      return call("setMapType", { type: type });
+    },
+    setCamera: function (camera) { return call("setCamera", camera || {}); },
+    setFollow: function (on, opts) {
+      if (on && typeof on === "object") {
+        return call("setFollow", {
+          follow: !!on.follow,
+          followHeading: on.followHeading === true || on.heading === true
+        });
+      }
+      var extra = opts || {};
+      return call("setFollow", {
+        follow: !!on,
+        followHeading: extra.followHeading === true || extra.heading === true
+      });
+    },
+    resetNorth: function () { return call("resetNorth", {}); },
+    zoomIn: function () { return call("zoomIn", {}); },
+    zoomOut: function () { return call("zoomOut", {}); },
+    setLayout: function (opts) { return call("setLayout", opts || {}); },
+    setRoute: function (route) { return call("setRoute", route || {}); },
+    clearRoute: function () { return call("clearRoute", {}); },
+    onMapReady: function (cb) { return listen("mapReady", cb); },
+    onFollowPaused: function (cb) { return listen("followPaused", cb); },
+    onCameraChanged: function (cb) { return listen("cameraChanged", cb); },
+    addMapListener: function (event, cb) { return listen(event, cb); }
   };
   window.tr3kNative = api;
 
