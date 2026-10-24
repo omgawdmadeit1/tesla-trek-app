@@ -23,7 +23,8 @@
     "@capacitor/status-bar": "8.0.3",
     "leaflet": "1.9.4",
     "three": "0.170.0",
-    "tr3k-ar": "file:plugins/tr3k-ar"
+    "tr3k-ar": "file:plugins/tr3k-ar",
+    "tr3k-native": "file:plugins/tr3k-native"
   },
   "devDependencies": {
     "@capacitor/cli": "8.5.0",

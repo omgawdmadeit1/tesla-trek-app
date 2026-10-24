@@ -1,0 +1,11 @@
+{
+  "name": "tr3k-native",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tr3k native bridge: precise location, stop arrival alerts, and the AR pumpkin box.",
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  }
+}

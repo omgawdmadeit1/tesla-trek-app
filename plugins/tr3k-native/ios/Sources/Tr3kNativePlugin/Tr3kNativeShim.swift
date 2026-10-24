@@ -1,0 +1,97 @@
+import Foundation
+
+/// Injected at document start into every page the shell loads (including https://tr3k.app/play).
+/// Exposes window.tr3kNative and upgrades navigator.geolocation to native Core Location.
+enum Tr3kNativeShim {
+    static let source = #"""
+(function () {
+  if (window.tr3kNative && window.tr3kNative.__native) return;
+  function plugin() {
+    var cap = window.Capacitor;
+    if (!cap) return null;
+    if (cap.Plugins && cap.Plugins.Tr3kNative) return cap.Plugins.Tr3kNative;
+    if (typeof cap.registerPlugin === "function") return cap.registerPlugin("Tr3kNative");
+    return null;
+  }
+  function call(name, args) {
+    var p = plugin();
+    if (!p || typeof p[name] !== "function") return Promise.reject(new Error("Tr3k native bridge is not ready"));
+    return p[name](args || {});
+  }
+  var watchers = {};
+  var nextId = 1;
+  var listener = null;
+  function ensureListener() {
+    if (listener) return;
+    var p = plugin();
+    if (!p || typeof p.addListener !== "function") return;
+    listener = p.addListener("location", function (pos) {
+      Object.keys(watchers).forEach(function (id) { try { watchers[id].ok(pos); } catch (e) {} });
+    });
+    p.addListener("locationError", function (err) {
+      Object.keys(watchers).forEach(function (id) { var w = watchers[id]; if (w.fail) try { w.fail(err); } catch (e) {} });
+    });
+  }
+  function toPosition(r) {
+    return {
+      coords: {
+        latitude: r.latitude, longitude: r.longitude, accuracy: r.accuracy,
+        altitude: r.altitude, altitudeAccuracy: r.altitudeAccuracy,
+        heading: r.heading, speed: r.speed
+      },
+      timestamp: r.timestamp
+    };
+  }
+  function toError(e) {
+    var msg = (e && e.message) || String(e);
+    var code = /denied/i.test(msg) ? 1 : /timeout/i.test(msg) ? 3 : 2;
+    return { code: code, message: msg, PERMISSION_DENIED: 1, POSITION_UNAVAILABLE: 2, TIMEOUT: 3 };
+  }
+  var api = {
+    __native: true,
+    platform: "ios",
+    version: 1,
+    getLocation: function (opts) { return call("getLocation", opts).then(toPosition); },
+    watchLocation: function (onPos, onErr) {
+      var id = nextId++;
+      watchers[id] = { ok: function (r) { onPos(toPosition(r)); }, fail: onErr ? function (e) { onErr(toError(e)); } : null };
+      ensureListener();
+      call("startWatch", {}).catch(function (e) { if (onErr) onErr(toError(e)); });
+      return id;
+    },
+    clearWatch: function (id) {
+      delete watchers[id];
+      if (Object.keys(watchers).length === 0) call("stopWatch", {}).catch(function () {});
+    },
+    requestPermissions: function (opts) { return call("requestPermissions", opts); },
+    requestNotifications: function () { return call("requestNotifications", {}); },
+    setStops: function (stops, opts) {
+      var o = opts || {};
+      return call("setStops", { stops: stops || [], radius: o.radius, title: o.title, body: o.body });
+    },
+    clearStops: function () { return call("clearStops", {}); },
+    onArrival: function (cb) {
+      var p = plugin();
+      if (!p || typeof p.addListener !== "function") return null;
+      return p.addListener("arrival", cb);
+    },
+    isARSupported: function () { return call("isARSupported", {}).then(function (r) { return !!(r && r.supported); }); },
+    openAR: function (opts) { return call("openAR", opts || {}); }
+  };
+  window.tr3kNative = api;
+
+  try {
+    var geo = {
+      getCurrentPosition: function (ok, fail, opts) {
+        api.getLocation(opts).then(ok, function (e) { if (fail) fail(toError(e)); });
+      },
+      watchPosition: function (ok, fail) { return api.watchLocation(ok, fail); },
+      clearWatch: function (id) { api.clearWatch(id); }
+    };
+    Object.defineProperty(navigator, "geolocation", { configurable: true, get: function () { return geo; } });
+  } catch (e) {}
+
+  try { window.dispatchEvent(new Event("tr3knativeready")); } catch (e) {}
+})();
+"""#
+}
