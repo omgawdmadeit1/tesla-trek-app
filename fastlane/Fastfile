@@ -40,7 +40,11 @@ platform :ios do
 
       # The App Store Connect record already exists. Register the bundle id
       # on the developer portal when sigh would otherwise miss it.
-      ensure_bundle_id(app_identifier: app_identifier)
+      # Associated Domains has to be on the App ID before sigh, or the
+      # applinks:tr3k.app entitlement is missing from the profile.
+      ensure_bundle_id(app_identifier: app_identifier, associated_domains: true)
+      live_activity_id = "app.tr3k.ios.LiveActivity"
+      ensure_bundle_id(app_identifier: live_activity_id, name: "Tr3k Live Activity")
 
       install_distribution_certificate(
         api_key: api_key,
@@ -78,6 +82,22 @@ platform :ios do
       UI.user_error!("sigh did not return a profile UUID") if profile_uuid.to_s.empty?
       UI.user_error!("Profile UUID must not contain spaces") if profile_uuid.match?(/\s/)
 
+      sigh(
+        api_key: api_key,
+        app_identifier: live_activity_id,
+        team_id: team_id,
+        platform: "ios",
+        force: true,
+        cert_id: cert_id,
+        provisioning_name: "tr3k-liveactivity-appstore",
+        ignore_profiles_with_different_name: true,
+        output_path: signing_dir,
+        filename: "tr3k-liveactivity.mobileprovision"
+      )
+      live_profile_uuid = lane_context[SharedValues::SIGH_UUID]
+      UI.user_error!("sigh did not return a Live Activity profile UUID") if live_profile_uuid.to_s.empty?
+      UI.user_error!("Live Activity profile UUID must not contain spaces") if live_profile_uuid.match?(/\s/)
+
       update_code_signing_settings(
         use_automatic_signing: false,
         path: "ios/App/App.xcodeproj",
@@ -86,6 +106,15 @@ platform :ios do
         code_sign_identity: distribution_identity,
         profile_name: profile_uuid,
         targets: ["App"]
+      )
+      update_code_signing_settings(
+        use_automatic_signing: false,
+        path: "ios/App/App.xcodeproj",
+        team_id: team_id,
+        bundle_identifier: live_activity_id,
+        code_sign_identity: distribution_identity,
+        profile_name: live_profile_uuid,
+        targets: ["Tr3kLiveActivity"]
       )
 
       build_app(
@@ -98,12 +127,13 @@ platform :ios do
         output_directory: signing_dir,
         output_name: "Tr3k.ipa",
         codesigning_identity: distribution_identity,
+        # Do not set PRODUCT_BUNDLE_IDENTIFIER or PROVISIONING_PROFILE_SPECIFIER
+        # here. Those xcargs apply to every target, including the Live Activity
+        # extension, which has its own bundle id and profile.
         xcargs: [
           "DEVELOPMENT_TEAM=#{team_id}",
           "CURRENT_PROJECT_VERSION=#{build_number}",
-          "CODE_SIGN_STYLE=Manual",
-          "PROVISIONING_PROFILE_SPECIFIER=#{profile_uuid}",
-          "PRODUCT_BUNDLE_IDENTIFIER=#{app_identifier}"
+          "CODE_SIGN_STYLE=Manual"
         ].join(" "),
         export_options: {
           method: "app-store",
@@ -111,7 +141,8 @@ platform :ios do
           signingStyle: "manual",
           signingCertificate: distribution_identity,
           provisioningProfiles: {
-            app_identifier => profile_uuid
+            app_identifier => profile_uuid,
+            live_activity_id => live_profile_uuid
           }
         }
       )
@@ -174,16 +205,29 @@ platform :ios do
 
   private_lane :ensure_bundle_id do |options|
     identifier = options[:app_identifier]
+    display_name = options[:name] || "Tr3k"
     existing = Spaceship::ConnectAPI::BundleId.find(identifier)
-    if existing
+    bundle = existing
+    if bundle
       UI.message("Bundle id #{identifier} is already registered.")
     else
-      Spaceship::ConnectAPI::BundleId.create(
-        name: "Tr3k",
+      bundle = Spaceship::ConnectAPI::BundleId.create(
+        name: display_name,
         platform: "IOS",
         identifier: identifier
       )
       UI.success("Registered bundle id #{identifier}.")
+    end
+
+    if options[:associated_domains]
+      type = Spaceship::ConnectAPI::BundleIdCapability::Type::ASSOCIATED_DOMAINS
+      capabilities = bundle.get_capabilities
+      if capabilities.any? { |cap| cap.is_type?(type) }
+        UI.message("Associated Domains is already enabled for #{identifier}.")
+      else
+        bundle.create_capability(type)
+        UI.success("Enabled Associated Domains for #{identifier}.")
+      end
     end
   end
 

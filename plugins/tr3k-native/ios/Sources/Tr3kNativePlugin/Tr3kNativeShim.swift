@@ -2,7 +2,8 @@ import Foundation
 
 /// Injected at document start into every page the shell loads (including https://tr3k.app/play).
 /// Exposes window.tr3kNative and upgrades navigator.geolocation to native Core Location.
-/// Map methods (shim version 2) are documented in plugins/tr3k-native/README.md.
+/// Map, arrival, share, haptics, and Live Activity methods (shim version 3)
+/// are documented in plugins/tr3k-native/README.md.
 enum Tr3kNativeShim {
     static let source = #"""
 (function () {
@@ -56,7 +57,7 @@ enum Tr3kNativeShim {
   var api = {
     __native: true,
     platform: "ios",
-    version: 2,
+    version: 3,
     getLocation: function (opts) { return call("getLocation", opts).then(toPosition); },
     watchLocation: function (onPos, onErr) {
       var id = nextId++;
@@ -114,12 +115,46 @@ enum Tr3kNativeShim {
     setLayout: function (opts) { return call("setLayout", opts || {}); },
     setRoute: function (route) { return call("setRoute", route || {}); },
     clearRoute: function () { return call("clearRoute", {}); },
+    share: function (opts) { return call("share", opts || {}); },
+    getLastDeepLink: function () { return call("getLastDeepLink", {}); },
+    onDeepLink: function (cb) {
+      if (typeof cb !== "function") return null;
+      var saw = null;
+      function emit(detail) {
+        if (!detail || !detail.url) return;
+        var token = detail.issuedAt || detail.url;
+        if (saw === token) return;
+        saw = token;
+        try { cb(detail); } catch (e) {}
+      }
+      if (api.lastDeepLink) emit(api.lastDeepLink);
+      function handler(event) { emit(event && event.detail); }
+      window.addEventListener("tr3kdeepLink", handler);
+      return { remove: function () { window.removeEventListener("tr3kdeepLink", handler); } };
+    },
+    lastDeepLink: null,
+    haptic: function (kind) {
+      if (kind && typeof kind === "object") return call("haptic", kind);
+      return call("haptic", { kind: kind || "medium" });
+    },
+    startLiveActivity: function (opts) { return call("startLiveActivity", opts || {}); },
+    updateLiveActivity: function (opts) { return call("updateLiveActivity", opts || {}); },
+    endLiveActivity: function (opts) { return call("endLiveActivity", opts || {}); },
     onMapReady: function (cb) { return listen("mapReady", cb); },
     onFollowPaused: function (cb) { return listen("followPaused", cb); },
     onCameraChanged: function (cb) { return listen("cameraChanged", cb); },
     addMapListener: function (event, cb) { return listen(event, cb); }
   };
+  function deliverDeepLink(detail) {
+    if (!detail || !detail.url) return;
+    if (detail.issuedAt && api._deepLinkIssuedAt === detail.issuedAt) return;
+    api._deepLinkIssuedAt = detail.issuedAt || null;
+    api.lastDeepLink = detail;
+    try { window.dispatchEvent(new CustomEvent("tr3kdeepLink", { detail: detail })); } catch (e) {}
+  }
+  window.__tr3kDeliverDeepLink = deliverDeepLink;
   window.tr3kNative = api;
+  call("getLastDeepLink", {}).then(function (data) { deliverDeepLink(data); }).catch(function () {});
 
   try {
     var geo = {
