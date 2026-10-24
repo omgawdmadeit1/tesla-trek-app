@@ -20,8 +20,13 @@ let package = Package(
             name: "Tr3kActivityKit",
             path: "ios/Sources/Tr3kActivityKit",
             swiftSettings: [
-                // ActivityKit autolink is a hard load. iOS 15 has no ActivityKit.
-                .unsafeFlags(["-disable-autolink-framework", "ActivityKit"])
+                // The Xcode 26 driver does not accept -disable-autolink-framework
+                // itself. Pass it to the frontend so ActivityKit stays a weak link
+                // and an iOS 15 launch does not hard-require the framework.
+                .unsafeFlags([
+                    "-Xfrontend", "-disable-autolink-framework",
+                    "-Xfrontend", "ActivityKit"
+                ])
             ],
             linkerSettings: [
                 .unsafeFlags(["-weak_framework", "ActivityKit"])
