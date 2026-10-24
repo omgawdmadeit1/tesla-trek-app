@@ -187,6 +187,7 @@ final class Tr3kPumpkinARViewController: UIViewController, ARSCNViewDelegate {
         case "rare": return UIColor(red: 0.25, green: 0.55, blue: 0.95, alpha: 1)
         case "epic": return UIColor(red: 0.62, green: 0.32, blue: 0.95, alpha: 1)
         case "legendary", "gold": return UIColor(red: 1.0, green: 0.78, blue: 0.2, alpha: 1)
+        case "mythic": return UIColor(red: 0.95, green: 0.2, blue: 0.45, alpha: 1)
         default: return UIColor(red: 0.95, green: 0.85, blue: 0.6, alpha: 1)
         }
     }
