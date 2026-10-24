@@ -24,7 +24,8 @@ let package = Package(
                 .linkedFramework("ARKit"),
                 .linkedFramework("SceneKit"),
                 .linkedFramework("CoreLocation"),
-                .linkedFramework("UserNotifications")
+                .linkedFramework("UserNotifications"),
+                .linkedFramework("MapKit")
             ])
     ]
 )

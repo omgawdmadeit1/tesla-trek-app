@@ -48,6 +48,12 @@ Capacitor app **Tr3k**, bundle id `app.tr3k.ios`, team `DQA38RTNF7`, App Store C
 
 On iPhone the crack-open is ARKit: a world-tracked cookie about 0.65 m in front of the camera, tap to split the shell, then the reward rises and spins. WebXR is not available in iOS Safari or WKWebView. AR Quick Look can show a USDZ, but it cannot tell the app that the cookie was tapped, so the pack would not update. A camera-and-three.js overlay is the web fallback and the path used at tr3k.app. ARKit is the one that reliably places the cookie in the room on a stranger's iPhone. The plugin is local (`plugins/tr3k-ar`) and links only Apple frameworks, so the TestFlight job does not need a model pipeline.
 
+### Native map
+
+The iOS shell can show a real MapKit map (`MKMapView`) on top of the WebView during navigation: standard, satellite, hybrid, and muted styles, pinch zoom, compass, follow, and a pitched camera with 3D buildings where Apple provides them. It does not use a MapKit JS token.
+
+`window.tr3kNative` (shim version 2) is injected at document start. On Start Tr3k, call `showMap`. On end navigation, call `hideMap` so the page receives touches again. Pass `insets` for the page's top and bottom chrome. The method list for the web team is `plugins/tr3k-native/README.md`. In a normal browser, `tr3kNative` is absent and the site keeps its current map.
+
 ```bash
 npm run build
 npx cap sync ios

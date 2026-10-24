@@ -1,6 +1,7 @@
 import ARKit
 import Capacitor
 import CoreLocation
+import UIKit
 import UserNotifications
 import WebKit
 
@@ -17,7 +18,19 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
         CAPPluginMethod(name: "setStops", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clearStops", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isARSupported", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "openAR", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "openAR", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "isNativeMapSupported", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "showMap", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "hideMap", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setMapType", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setCamera", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setFollow", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "resetNorth", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "zoomIn", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "zoomOut", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setLayout", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setRoute", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clearRoute", returnType: CAPPluginReturnPromise)
     ]
 
     private static let regionPrefix = "tr3k-stop-"
@@ -30,6 +43,7 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
     private var arrivalTitle = "You've arrived at a Tr3k stop"
     private var arrivalBody = "Open Tr3k to check in."
     private var stopNames: [String: String] = [:]
+    private var mapController: Tr3kNativeMapController?
 
     override public func load() {
         DispatchQueue.main.async {
@@ -147,7 +161,9 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
     @objc func stopWatch(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
             self.watching = false
-            if self.pendingFixes.isEmpty { self.manager.stopUpdatingLocation() }
+            if self.pendingFixes.isEmpty && self.mapController?.wantsFollow != true {
+                self.manager.stopUpdatingLocation()
+            }
             call.resolve()
         }
     }
@@ -160,7 +176,14 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
             calls.forEach { $0.resolve(["location": statusName(status)]) }
         }
         if isAuthorized(status) {
-            if watching || !pendingFixes.isEmpty { manager.startUpdatingLocation() }
+            if watching || !pendingFixes.isEmpty || mapController?.wantsFollow == true {
+                manager.startUpdatingLocation()
+            }
+            if mapController?.wantsFollowHeading == true {
+                applyHeadingOrientation()
+                manager.headingFilter = 5
+                manager.startUpdatingHeading()
+            }
         } else if status == .denied || status == .restricted {
             let calls = pendingFixes
             pendingFixes.removeAll()
@@ -179,13 +202,27 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
         }
         if watching {
             notifyListeners("location", data: payload)
-        } else {
+        }
+        mapController?.ingest(location: loc)
+        if !watching && pendingFixes.isEmpty && mapController?.wantsFollow != true {
             manager.stopUpdatingLocation()
         }
     }
 
+    public func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
+        let heading = newHeading.trueHeading >= 0 ? newHeading.trueHeading : newHeading.magneticHeading
+        mapController?.ingest(heading: heading)
+    }
+
     public func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        if let clErr = error as? CLError, clErr.code == .locationUnknown { return }
+        if let clErr = error as? CLError {
+            switch clErr.code {
+            case .locationUnknown, .headingFailure:
+                return
+            default:
+                break
+            }
+        }
         notifyListeners("locationError", data: ["message": error.localizedDescription])
     }
 
@@ -298,6 +335,150 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
                 if let presenter = presenter { presenter.dismiss(animated: true, completion: done) } else { done() }
             }
             presenter.present(view, animated: true)
+        }
+    }
+
+    // MARK: Native MapKit map
+
+    @objc func isNativeMapSupported(_ call: CAPPluginCall) {
+        call.resolve(["supported": true])
+    }
+
+    @objc func showMap(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let webView = self.bridge?.webView, let parent = webView.superview else {
+                call.reject("The app view is not ready.")
+                return
+            }
+            if self.manager != nil, self.authStatus() == .notDetermined {
+                self.manager.requestWhenInUseAuthorization()
+            }
+            let snapshot = self.mapOnMain().show(in: parent, above: webView, options: call.jsObjectRepresentation)
+            call.resolve(snapshot)
+        }
+    }
+
+    @objc func hideMap(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let map = self.mapController else {
+                call.resolve(["visible": false])
+                return
+            }
+            call.resolve(map.hide())
+        }
+    }
+
+    @objc func setMapType(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            let raw = call.getString("type") ?? call.getString("mapType")
+            call.resolve(self.mapOnMain().setMapType(raw))
+        }
+    }
+
+    @objc func setCamera(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            call.resolve(self.mapOnMain().setCamera(options: call.jsObjectRepresentation))
+        }
+    }
+
+    @objc func setFollow(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            call.resolve(self.mapOnMain().setFollow(options: call.jsObjectRepresentation))
+        }
+    }
+
+    @objc func resetNorth(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            call.resolve(self.mapOnMain().resetNorth())
+        }
+    }
+
+    @objc func zoomIn(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            call.resolve(self.mapOnMain().zoom(by: 1))
+        }
+    }
+
+    @objc func zoomOut(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            call.resolve(self.mapOnMain().zoom(by: -1))
+        }
+    }
+
+    @objc func setLayout(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            call.resolve(self.mapOnMain().setLayout(options: call.jsObjectRepresentation))
+        }
+    }
+
+    @objc func setRoute(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            call.resolve(self.mapOnMain().setRoute(options: call.jsObjectRepresentation))
+        }
+    }
+
+    @objc func clearRoute(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            call.resolve(self.mapOnMain().clearRoute())
+        }
+    }
+
+    private func mapOnMain() -> Tr3kNativeMapController {
+        if let existing = mapController { return existing }
+        let controller = Tr3kNativeMapController()
+        controller.onEvent = { [weak self] name, data, retain in
+            self?.notifyListeners(name, data: data, retainUntilConsumed: retain)
+        }
+        controller.onFollowNeedsLocation = { [weak self] follow, heading in
+            self?.syncMapLocationDemand(follow: follow, heading: heading)
+        }
+        controller.fallbackCoordinate = { [weak self] in
+            self?.manager?.location?.coordinate
+        }
+        mapController = controller
+        return controller
+    }
+
+    private func syncMapLocationDemand(follow: Bool, heading: Bool) {
+        guard let manager else { return }
+        if follow {
+            applyHeadingOrientation()
+            if authStatus() == .notDetermined {
+                manager.requestWhenInUseAuthorization()
+            } else if isAuthorized(authStatus()) {
+                manager.startUpdatingLocation()
+                if heading {
+                    manager.headingFilter = 5
+                    manager.startUpdatingHeading()
+                } else {
+                    manager.stopUpdatingHeading()
+                }
+            }
+        } else {
+            manager.stopUpdatingHeading()
+            if !watching && pendingFixes.isEmpty {
+                manager.stopUpdatingLocation()
+            }
+        }
+    }
+
+    private func applyHeadingOrientation() {
+        guard let manager else { return }
+        guard let orientation = bridge?.viewController?.view.window?.windowScene?.interfaceOrientation else {
+            manager.headingOrientation = .portrait
+            return
+        }
+        switch orientation {
+        case .landscapeLeft:
+            manager.headingOrientation = .landscapeLeft
+        case .landscapeRight:
+            manager.headingOrientation = .landscapeRight
+        case .portraitUpsideDown:
+            manager.headingOrientation = .portraitUpsideDown
+        case .portrait, .unknown:
+            manager.headingOrientation = .portrait
+        @unknown default:
+            manager.headingOrientation = .portrait
         }
     }
 }
