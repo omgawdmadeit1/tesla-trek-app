@@ -29,15 +29,19 @@ function setBool(key, value) {
 setString("CFBundleDisplayName", "Tr3k");
 setString(
   "NSCameraUsageDescription",
-  "Tr3k uses the camera to place a fortune cookie in front of you and crack it open.",
+  "Tr3k uses your camera to place a glowing pumpkin box in front of you so you can open your prize. Nothing is recorded or uploaded.",
 );
 setString(
   "NSLocationWhenInUseUsageDescription",
-  "Tr3k uses your location to check you in when you reach a trek stop.",
+  "Tr3k uses your precise location to show nearby treasure hunts, give turn-by-turn directions, and confirm you have reached each Tr3k stop.",
+);
+setString(
+  "NSLocationAlwaysAndWhenInUseUsageDescription",
+  "Allow Tr3k to use your location in the background so it can alert you the moment you arrive at a Tr3k stop, even when the app is closed. Tr3k only watches for the stops on your current hunt.",
 );
 setString(
   "NSMotionUsageDescription",
-  "Tr3k uses motion so the cookie stays put while you look around.",
+  "Tr3k uses your phone's motion sensors so the treasure stays in place while you look around in AR.",
 );
 setBool("ITSAppUsesNonExemptEncryption", "false");
 writeFileSync(plistPath, plist);
@@ -51,4 +55,4 @@ if (!project.includes("DEVELOPMENT_TEAM = DQA38RTNF7;")) {
   );
 }
 writeFileSync(projectPath, project);
-console.log("patched iOS display name, permissions, bundle id, and team");
+console.log("patched iOS display name, permissions, arrival notifications, bundle id, and team");

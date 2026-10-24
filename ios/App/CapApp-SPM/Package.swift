@@ -18,7 +18,8 @@ let package = Package(
         .package(name: "CapacitorKeyboard", path: "../../../node_modules/@capacitor/keyboard"),
         .package(name: "CapacitorSplashScreen", path: "../../../node_modules/@capacitor/splash-screen"),
         .package(name: "CapacitorStatusBar", path: "../../../node_modules/@capacitor/status-bar"),
-        .package(name: "Tr3kAr", path: "../../../plugins/tr3k-ar")
+        .package(name: "Tr3kAr", path: "../../../plugins/tr3k-ar"),
+        .package(name: "Tr3kNative", path: "../../../plugins/tr3k-native")
     ],
     targets: [
         .target(
@@ -32,7 +33,8 @@ let package = Package(
                 .product(name: "CapacitorKeyboard", package: "CapacitorKeyboard"),
                 .product(name: "CapacitorSplashScreen", package: "CapacitorSplashScreen"),
                 .product(name: "CapacitorStatusBar", package: "CapacitorStatusBar"),
-                .product(name: "Tr3kAr", package: "Tr3kAr")
+                .product(name: "Tr3kAr", package: "Tr3kAr"),
+                .product(name: "Tr3kNative", package: "Tr3kNative")
             ]
         )
     ]
