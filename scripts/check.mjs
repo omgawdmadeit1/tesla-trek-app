@@ -126,6 +126,12 @@ assert(fastfile.includes("app.tr3k.ios.widget"), "widget bundle id in the signin
 assert(fastfile.includes("tr3k-widget-appstore"), "widget provisioning profile name");
 assert(fastfile.includes("APPLE_ID_AUTH"), "Sign in with Apple capability");
 assert(fastfile.includes("group.app.tr3k.ios"), "app group in the signing lane");
+assert(fastfile.includes("ensure_app_group("), "app group container is created before capabilities");
+assert(fastfile.includes("APP_GROUP_IDS"), "app group id is assigned on the capability");
+assert(fastfile.includes("delete_stale_app_store_profiles"), "stale app store profiles are deleted");
+assert(fastfile.includes("require_profile_app_group"), "profiles must contain the app group");
+assert(fastfile.includes('security", "cms"'), "profile entitlements are decoded");
+assert(fastfile.includes("Do not register an App ID named"), "group identifier is not registered as an app id");
 assert(!fastfile.includes("skip_waiting_for_build_processing: false"), "TestFlight still skips waiting");
 
 const flight = readFileSync(join(root, "public/get/testflight.js"), "utf8");

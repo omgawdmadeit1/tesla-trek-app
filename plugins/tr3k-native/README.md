@@ -185,11 +185,9 @@ A tap opens `https://tr3k.app/play/?trek=<id>` when the ref is a Tr3k, or `?ques
 
 The widget and the app share the App Group. The Live Activity target does not.
 
-Joseph, before the signed TestFlight upload can include this extension:
+The TestFlight lane creates the App Group `group.app.tr3k.ios` (name Tr3k) through the App Store Connect API before it enables App Groups on `app.tr3k.ios` and `app.tr3k.ios.widget`, then deletes the stale `tr3k-appstore` and `tr3k-widget-appstore` profiles and asks sigh to mint new ones. The archive runs only when those profiles list `group.app.tr3k.ios`. The Live Activity profile is left alone.
 
-1. Create the App Group `group.app.tr3k.ios` (name Tr3k) on team `DQA38RTNF7`. The App Store Connect API key cannot create App Groups.
-2. Assign that group to `app.tr3k.ios` and `app.tr3k.ios.widget`.
-3. The lane registers `app.tr3k.ios.widget` and requests the profile `tr3k-widget-appstore`. If capability settings are rejected, the log names the portal toggle to confirm.
+If Apple still refuses the container, the lane stops before archive and names the remaining portal pass: Identifiers, add, App Groups, description Tr3k, identifier `group.app.tr3k.ios`, Register, then Configure App Groups on `app.tr3k.ios` and `app.tr3k.ios.widget` and Assign that group. Do not register an App ID named `group.app.tr3k.ios`.
 
 The unsigned pull-request build does not need those portal toggles.
 

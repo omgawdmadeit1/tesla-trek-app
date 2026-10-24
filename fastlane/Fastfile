@@ -5,6 +5,74 @@ require "tmpdir"
 
 opt_out_usage
 
+def app_group_portal_hint(group, bundle_ids)
+  <<~MSG.strip
+    Joseph, on team DQA38RTNF7 open Certificates, Identifiers & Profiles, then Identifiers.
+    Click +, choose App Groups, Continue. Description: Tr3k. Identifier: #{group}. Continue, then Register.
+    Open the App ID for each of #{bundle_ids}. App Groups, Configure, check #{group}, Continue, then Assign.
+    Do not register an App ID named #{group}.
+  MSG
+end
+
+def find_connect_app_group(client, identifier)
+  %w[appGroups applicationGroups].each do |resource|
+    rows = connect_collection(client, resource, { filter: { identifier: identifier }, limit: 200 })
+    rows = connect_collection(client, resource, { limit: 200 }) if rows.nil?
+    next if rows.nil?
+
+    match = rows.find { |row| connect_group_identifier(row) == identifier }
+    return match if match
+  end
+  nil
+end
+
+def create_connect_app_group(client, identifier, name)
+  [
+    ["appGroups", "appGroups"],
+    ["applicationGroups", "applicationGroups"]
+  ].each do |resource, type|
+    begin
+      client.post(
+        "v1/#{resource}",
+        {
+          data: {
+            type: type,
+            attributes: {
+              name: name,
+              identifier: identifier
+            }
+          }
+        }
+      )
+      return true
+    rescue StandardError => error
+      message = error.message.to_s
+      return true if message.include?(identifier) && message.match?(/already exists|DUPLICATE|409/i)
+
+      UI.important("Connect API create #{resource} #{identifier} was not accepted: #{message.lines.first.to_s.strip}")
+    end
+  end
+  false
+end
+
+def connect_collection(client, resource, params)
+  response = client.get("v1/#{resource}", params)
+  body = response.respond_to?(:body) ? response.body : nil
+  return [] unless body.is_a?(Hash) && body["data"].is_a?(Array)
+
+  body["data"]
+rescue StandardError => error
+  UI.message("Connect API list #{resource} was not available: #{error.message.to_s.lines.first.to_s.strip}")
+  nil
+end
+
+def connect_group_identifier(row)
+  attributes = row.is_a?(Hash) ? row["attributes"] : nil
+  return nil unless attributes.is_a?(Hash)
+
+  attributes["identifier"] || attributes["groupId"] || attributes["id"]
+end
+
 default_platform(:ios)
 
 platform :ios do
@@ -42,7 +110,10 @@ platform :ios do
       # on the developer portal when sigh would otherwise miss it.
       # Associated Domains, App Groups, and Sign in with Apple have to be on
       # the App ID before sigh, or those entitlements are missing from the profile.
+      # The App Group container has to exist before APP_GROUPS is enabled.
+      # Turning the capability on with no container mints profiles that omit it.
       app_group = "group.app.tr3k.ios"
+      ensure_app_group(identifier: app_group, name: "Tr3k")
       ensure_bundle_id(
         app_identifier: app_identifier,
         associated_domains: true,
@@ -68,6 +139,12 @@ platform :ios do
       identity_dump = sh("security", "find-identity", "-v", "-p", "codesigning", keychain_path, log: false)
       distribution_identity = identity_dump[/"(Apple Distribution:[^"]+)"/, 1]
       UI.user_error!("The distribution certificate is not in the temporary keychain") if distribution_identity.to_s.empty?
+
+      # Drop the profiles minted before the App Group container existed.
+      # sigh force recreates them. A timestamped name means the previous
+      # profile was left in place, so delete that one too. Leave the Live
+      # Activity profile alone.
+      delete_stale_app_store_profiles(names: ["tr3k-appstore", "tr3k-widget-appstore"])
 
       # Omit development and adhoc. Passing false still counts as setting
       # both options, and sigh rejects that pair. Defaults are the App Store profile.
@@ -121,6 +198,18 @@ platform :ios do
       widget_profile_uuid = lane_context[SharedValues::SIGH_UUID]
       UI.user_error!("sigh did not return a widget profile UUID") if widget_profile_uuid.to_s.empty?
       UI.user_error!("Widget profile UUID must not contain spaces") if widget_profile_uuid.match?(/\s/)
+
+      # Archive only when the new profiles actually list the group. A profile
+      # minted from an App ID with APP_GROUPS and no container fails codesign
+      # the same way the previous TestFlight run did.
+      require_profile_app_group(
+        path: File.join(signing_dir, "tr3k-appstore.mobileprovision"),
+        group: app_group
+      )
+      require_profile_app_group(
+        path: File.join(signing_dir, "tr3k-widget.mobileprovision"),
+        group: app_group
+      )
 
       update_code_signing_settings(
         use_automatic_signing: false,
@@ -237,6 +326,68 @@ platform :ios do
     keychain_path
   end
 
+  # Creates the App Group container itself. Enabling APP_GROUPS on a bundle
+  # id does not create group.app.tr3k.ios. This uses the same Connect API
+  # client the rest of the lane uses. It does not register a bundle id with
+  # the group identifier.
+  private_lane :ensure_app_group do |options|
+    identifier = options[:identifier].to_s
+    name = options[:name].to_s
+    name = "Tr3k" if name.empty?
+    UI.user_error!("App Group identifier is required") if identifier.empty?
+
+    client = Spaceship::ConnectAPI.provisioning_request_client
+    if find_connect_app_group(client, identifier)
+      UI.message("App Group #{identifier} already exists.")
+      next
+    end
+
+    if create_connect_app_group(client, identifier, name)
+      UI.success("Created App Group #{identifier} named #{name}.")
+      next
+    end
+
+    UI.important("The Connect API did not create App Group #{identifier}.")
+    UI.important(app_group_portal_hint(identifier, "app.tr3k.ios and app.tr3k.ios.widget"))
+    UI.important("sigh still runs. The lane stops before archive if the new profile omits this group.")
+  end
+
+  # Deletes App Store profiles whose portal name is the requested name, or
+  # that name plus the timestamp sigh appends when the name is already taken.
+  private_lane :delete_stale_app_store_profiles do |options|
+    names = Array(options[:names]).map(&:to_s).reject(&:empty?)
+    profiles = Spaceship::ConnectAPI::Profile.all(filter: { profileType: "IOS_APP_STORE" })
+    profiles.each do |profile|
+      stale = names.any? { |name| profile.name == name || profile.name.start_with?("#{name} ") }
+      next unless stale
+
+      UI.message("Deleting App Store profile #{profile.name}.")
+      profile.delete!
+    end
+  end
+
+  private_lane :require_profile_app_group do |options|
+    path = options[:path].to_s
+    group = options[:group].to_s
+    UI.user_error!("Provisioning profile was not written to #{path}") unless File.exist?(path)
+
+    plist = sh("security", "cms", "-D", "-i", path)
+    groups = plist[/com\.apple\.security\.application-groups.*?<\/array>/m]
+    if groups&.include?("<string>#{group}</string>")
+      UI.success("#{File.basename(path)} includes #{group}.")
+      next
+    end
+
+    UI.user_error!(<<~MSG.strip)
+      #{File.basename(path)} does not include the #{group} App Group.
+      Enabling APP_GROUPS without that container is what minted the previous profiles.
+
+      #{app_group_portal_hint(group, "app.tr3k.ios and app.tr3k.ios.widget")}
+
+      Re-run the TestFlight workflow after that. The Live Activity App ID stays unchanged.
+    MSG
+  end
+
   private_lane :ensure_bundle_id do |options|
     identifier = options[:app_identifier]
     display_name = options[:name] || "Tr3k"
@@ -263,14 +414,17 @@ platform :ios do
 
     if options[:app_group]
       group = options[:app_group]
+      # APP_GROUP_IDS is the settings key that names the container. The key
+      # APP_GROUPS is rejected by the provisioning API and leaves the
+      # capability on with no group, which is how the last profiles were minted.
       ensure_capability(
         bundle: bundle,
         type: Spaceship::ConnectAPI::BundleIdCapability::Type::APP_GROUPS,
         settings: [{
-          key: "APP_GROUPS",
-          options: [{ key: group }]
+          key: "APP_GROUP_IDS",
+          options: [{ key: group, enabled: true }]
         }],
-        hint: "Create the App Group #{group} (name Tr3k) and assign it to #{identifier} on team DQA38RTNF7."
+        hint: app_group_portal_hint(group, identifier)
       )
     end
 
