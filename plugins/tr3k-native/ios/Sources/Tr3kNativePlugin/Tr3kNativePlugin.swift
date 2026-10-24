@@ -2,9 +2,11 @@ import ARKit
 import Capacitor
 import CoreLocation
 import Tr3kActivityKit
+import Tr3kAppGroup
 import UIKit
 import UserNotifications
 import WebKit
+import WidgetKit
 
 @objc(Tr3kNativePlugin)
 public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate {
@@ -37,7 +39,15 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
         CAPPluginMethod(name: "zoomOut", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setLayout", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setRoute", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "clearRoute", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "clearRoute", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "saveOfflineTreks", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getOfflineTreks", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clearOfflineTreks", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "signInWithApple", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getAppleSession", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "signOutApple", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "arStatus", returnType: CAPPluginReturnPromise)
     ]
 
     private var manager: CLLocationManager!
@@ -52,6 +62,7 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
     private var deepLinkSerial: Double = 0
     private var lastDeliveredURL: String?
     private var lastDeliveredAt: TimeInterval = 0
+    private var appleSignIn: Tr3kAppleSignIn?
 
     override public func load() {
         NotificationCenter.default.addObserver(
@@ -495,27 +506,57 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
         }
     }
 
+    @objc func arStatus(_ call: CAPPluginCall) {
+        Tr3kARAccess.check(subject: "glowing pumpkin", prompt: false) { payload in
+            call.resolve(Tr3kARAccess.fields(payload))
+        }
+    }
+
+    @objc func openSettings(_ call: CAPPluginCall) {
+        Tr3kARAccess.openSettings(call)
+    }
+
     @objc func openAR(_ call: CAPPluginCall) {
+        let tier = call.getString("tier") ?? "common"
+        let prize = call.getString("prize") ?? ""
         DispatchQueue.main.async {
-            guard ARWorldTrackingConfiguration.isSupported else {
-                call.resolve(["opened": false, "reason": "unsupported"])
-                return
-            }
             guard let presenter = self.bridge?.viewController else {
-                call.resolve(["opened": false, "reason": "not_ready"])
+                call.resolve([
+                    "opened": false,
+                    "reason": "not_ready",
+                    "tier": tier,
+                    "prize": prize,
+                    "supported": ARWorldTrackingConfiguration.isSupported,
+                    "camera": "unavailable",
+                    "canOpenSettings": false
+                ])
                 return
             }
-            let view = Tr3kPumpkinARViewController()
-            view.modalPresentationStyle = .fullScreen
-            view.tier = call.getString("tier") ?? "common"
-            view.prize = call.getString("prize") ?? ""
-            let tier = view.tier
-            let prize = view.prize
-            view.onFinish = { [weak presenter] opened, reason in
-                let done = { call.resolve(["opened": opened, "reason": reason, "tier": tier, "prize": prize]) }
-                if let presenter = presenter { presenter.dismiss(animated: true, completion: done) } else { done() }
+            Tr3kARAccess.check(subject: "glowing pumpkin", prompt: true) { decision in
+                let proceed = decision["proceed"] as? Bool ?? false
+                guard proceed else {
+                    var payload = Tr3kARAccess.fields(decision)
+                    payload["opened"] = false
+                    payload["tier"] = tier
+                    payload["prize"] = prize
+                    call.resolve(payload)
+                    return
+                }
+                let view = Tr3kPumpkinARViewController()
+                view.modalPresentationStyle = .fullScreen
+                view.tier = tier
+                view.prize = prize
+                view.onFinish = { [weak presenter] opened, reason in
+                    var payload = Tr3kARAccess.fields(decision)
+                    payload["opened"] = opened
+                    payload["reason"] = reason
+                    payload["tier"] = tier
+                    payload["prize"] = prize
+                    let done = { call.resolve(payload) }
+                    if let presenter { presenter.dismiss(animated: true, completion: done) } else { done() }
+                }
+                presenter.present(view, animated: true)
             }
-            presenter.present(view, animated: true)
         }
     }
 
@@ -660,6 +701,63 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
             manager.headingOrientation = .portrait
         @unknown default:
             manager.headingOrientation = .portrait
+        }
+    }
+
+    // MARK: Offline cache (App Group, slim refs)
+
+    @objc func saveOfflineTreks(_ call: CAPPluginCall) {
+        let raw = call.jsObjectRepresentation
+        DispatchQueue.main.async {
+            let saved = Tr3kOfflineCache.save(raw)
+            WidgetCenter.shared.reloadTimelines(ofKind: Tr3kOfflineCache.widgetKind)
+            call.resolve(saved)
+        }
+    }
+
+    @objc func getOfflineTreks(_ call: CAPPluginCall) {
+        call.resolve(Tr3kOfflineCache.load(key: call.getString("key")))
+    }
+
+    @objc func clearOfflineTreks(_ call: CAPPluginCall) {
+        let cleared = Tr3kOfflineCache.clear(key: call.getString("key"))
+        DispatchQueue.main.async {
+            WidgetCenter.shared.reloadTimelines(ofKind: Tr3kOfflineCache.widgetKind)
+            call.resolve(cleared)
+        }
+    }
+
+    // MARK: Sign in with Apple (optional, not required to launch)
+
+    @objc func getAppleSession(_ call: CAPPluginCall) {
+        call.resolve(Tr3kAppleSession.payload())
+    }
+
+    @objc func signOutApple(_ call: CAPPluginCall) {
+        call.resolve(Tr3kAppleSession.clear())
+    }
+
+    @objc func signInWithApple(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            if self.appleSignIn != nil {
+                var payload = Tr3kAppleSession.payload()
+                payload["reason"] = "in_progress"
+                call.resolve(payload)
+                return
+            }
+            guard let presenter = self.topPresenter() else {
+                var payload = Tr3kAppleSession.payload()
+                payload["reason"] = "unavailable"
+                payload["message"] = "Tr3k is not ready to show Sign in with Apple."
+                call.resolve(payload)
+                return
+            }
+            let flow = Tr3kAppleSignIn(presenter: presenter) { [weak self] payload in
+                self?.appleSignIn = nil
+                call.resolve(payload)
+            }
+            self.appleSignIn = flow
+            flow.start()
         }
     }
 }

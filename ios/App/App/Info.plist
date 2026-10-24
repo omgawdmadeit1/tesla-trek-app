@@ -67,7 +67,7 @@
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Tr3k uses your camera to place a glowing pumpkin box in front of you so you can open your prize. Nothing is recorded or uploaded.</string>
+	<string>Tr3k uses the camera to place an AR collectible in front of you, a fortune cookie or a glowing pumpkin, so you can open it. Nothing is recorded or uploaded.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Tr3k uses your precise location to show nearby treasure hunts, give turn-by-turn directions, and confirm you have reached each Tr3k stop.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
@@ -90,7 +90,7 @@
 		</dict>
 	</array>
 	<key>NSMotionUsageDescription</key>
-	<string>Tr3k uses your phone's motion sensors so the treasure stays in place while you look around in AR.</string>
+	<string>Tr3k uses motion so the AR collectible, the fortune cookie or pumpkin, stays in place while you look around.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 </dict>

@@ -1,10 +1,12 @@
 # Tr3k native bridge
 
-iOS-only Capacitor plugin (`jsName` `Tr3kNative`). The shell injects `window.tr3kNative` at document start on every page, including `https://tr3k.app/play/`. Shim version is `window.tr3kNative.version` (currently **3**).
+iOS-only Capacitor plugin (`jsName` `Tr3kNative`). The shell injects `window.tr3kNative` at document start on every page, including `https://tr3k.app/play/`. Shim version is `window.tr3kNative.version` (currently **4**).
 
 Version 2 is the MapKit map (`MKMapCamera` pitch and Apple's 3D buildings). The browser keeps its own map. This plugin does not load MapKit JS and does not need a MapKit token.
 
 Version 3 adds three product paths on the same object: background Tr3k stop arrival alerts, the share sheet plus deep links, and haptics plus a local Live Activity. Map, location watch, and `openAR` stay as they were.
+
+Version 4 adds the on-device offline cache (the same record feeds the home screen widget), AR camera status plus Settings, and an optional Sign in with Apple session. Every call returns a Promise. The shim still fires `tr3knativeready` at document start.
 
 ## Background location and arrival alerts
 
@@ -133,7 +135,109 @@ await tr3kNative.endLiveActivity({ dismissal: "default" });
 
 The widget extension bundle id is `app.tr3k.ios.LiveActivity`. It links the `Tr3kActivityKit` module, which is also what the shell uses, so the activity type matches. The app Info.plist key `NSSupportsLiveActivities` is true. There is no Push Notifications capability. iOS 15 still installs; `startLiveActivity` resolves `unsupported` there.
 
-Joseph: the TestFlight lane registers `app.tr3k.ios.LiveActivity` and requests an App Store profile for it. If that step fails, create that bundle id on team `DQA38RTNF7`. Local Live Activities do not need a separate portal capability beyond the Info.plist flag. If a future Apple portal toggle appears for Live Activities on `app.tr3k.ios`, turn it on. Do not enable push for this.
+Joseph: the TestFlight lane registers `app.tr3k.ios.LiveActivity` and requests an App Store profile for it. If that step fails, create that bundle id on team `DQA38RTNF7`. Local Live Activities do not need a separate portal capability beyond the Info.plist flag. If a future Apple portal toggle appears for Live Activities on `app.tr3k.ios`, turn it on. Do not enable push for this. The Live Activity extension does not join the App Group.
+
+## Offline cache (shim v4)
+
+The play page calls these names, in order. The first of each is the native plugin method. The other two are shim aliases of that method. All return Promises.
+
+| Action | Call, then aliases |
+| --- | --- |
+| Save | `saveOfflineTreks`, then `saveOffline`, then `offlineSave` |
+| Get | `getOfflineTreks`, then `getOffline`, then `offlineGet` |
+| Clear | `clearOfflineTreks`, then `clearOffline`, then `offlineClear` |
+
+```js
+await tr3kNative.saveOfflineTreks({
+  key: "tr3k.offline.v1",
+  v: 1,
+  at: Date.now(),
+  lat: 34.0811107,
+  lng: -83.987286,
+  nearby: [
+    { id: "buford", name: "Buford", lat: 34.0811107, lng: -83.987286, category: "walk", order: 1, copy: "Start here" }
+  ],
+  active: { id: "buford", name: "Buford", kind: "trek" }
+});
+
+const cached = await tr3kNative.getOfflineTreks({ key: "tr3k.offline.v1" });
+// same object the save stored, or {} when nothing is cached
+
+await tr3kNative.clearOfflineTreks({ key: "tr3k.offline.v1" });
+// { cleared: true, key: "tr3k.offline.v1" }
+```
+
+`nearby` and `active` are slim Tr3k refs only. Kept keys: `id`, `trekId`, `questId`, `name`, `placeName`, `place`, `title`, `lat`, `lng`, `latitude`, `longitude`, `lon`, `category`, `order`, `routeOrder`, `copy`, `gameCopy`, `kind`, `type`. Phone numbers, URLs, map items, and raw place records are dropped. A string id is accepted and stored as `{ id }`.
+
+The saved ref always has `id`, `kind` (`"trek"` or `"quest"`), and `name` when a place alias was present. `lat` / `lng` are set when the coordinate is valid. `order` is filled from `routeOrder`, and `copy` from `gameCopy`. Original allowlisted keys are kept too, so either alias still works on get. Nearby is capped at 24. `copy` / `gameCopy` are capped at 500 characters. Other strings are capped at 160, and `id` at 128.
+
+The stored record is only `{ key, v, at, nearby, active, lat, lng }`. A missing `active` is stored as `null`. A save replaces the whole record for that key. Get returns that object (a JSON object, not a string). No cache returns `{}`, so a missing `nearby` means there is nothing stored. A saved empty list is `{ key, v, at, nearby: [], active: null }`.
+
+The default key is `tr3k.offline.v1`. A key may use letters, digits, `.`, `_`, and `-`, up to 80 characters. Anything else uses the default key. The record lives in the App Group `group.app.tr3k.ios` (`UserDefaults` key `cache.<key>`, plus `tr3k-offline-v1.json` for the default key). There is no cloud copy.
+
+Saving or clearing reloads the home screen widget. The widget reads the default key only.
+
+## Home screen widget
+
+Widget extension bundle id `app.tr3k.ios.widget`, kind `app.tr3k.ios.widget.home`. Small and medium, branded Tr3k (`#14110e` with the orange accent). It shows "Tr3ks near you", the last active Tr3k, or "Start Tr3k" when the cache is empty.
+
+A tap opens `https://tr3k.app/play/?trek=<id>` when the ref is a Tr3k, or `?quest=<id>` when `kind` is `"quest"`. The small widget uses the active ref when one is saved, otherwise the single nearby ref, otherwise `https://tr3k.app/play/`. The medium widget gives each row its own link. There is no separate widget JS API: `saveOfflineTreks` on the default key is what refreshes it.
+
+The widget and the app share the App Group. The Live Activity target does not.
+
+Joseph, before the signed TestFlight upload can include this extension:
+
+1. Create the App Group `group.app.tr3k.ios` (name Tr3k) on team `DQA38RTNF7`. The App Store Connect API key cannot create App Groups.
+2. Assign that group to `app.tr3k.ios` and `app.tr3k.ios.widget`.
+3. The lane registers `app.tr3k.ios.widget` and requests the profile `tr3k-widget-appstore`. If capability settings are rejected, the log names the portal toggle to confirm.
+
+The unsigned pull-request build does not need those portal toggles.
+
+## AR permission status
+
+`openAR` still resolves the happy path `{ opened: true, reason: "opened", tier, prize }` and now also returns `supported`, `camera`, and `canOpenSettings`. Camera is checked before the modal is presented. Denied or restricted resolves (it does not reject) so the page can show its own message. There is no blank camera modal.
+
+```js
+const result = await tr3kNative.openAR({ tier: "rare", prize: "pumpkin" });
+// result.reason: "opened" | "closed" | "camera_denied" | "camera_restricted" | "unsupported" | "not_ready"
+// result.camera: "authorized" | "denied" | "restricted" | "notDetermined" | "unavailable"
+// result.canOpenSettings is true for denied and restricted
+// result.message is a sentence the page can show
+
+if (result.canOpenSettings) await tr3kNative.openSettings();
+```
+
+`arStatus()` returns the same fields without prompting and without presenting AR (`reason` is `camera_prompt` while the system dialog has not been shown). `isARSupported()` is still a boolean hardware check.
+
+`Tr3kAR.open` keeps `{ cracked, reason }` and adds `supported`, `camera`, `canOpenSettings`, and `message`. It still rejects only when the app view is not ready. `Tr3kAR.isAvailable` is still the hardware check (`available` follows `supported`) plus those extra fields. `Tr3kAR.openSettings()` opens Settings the same way.
+
+The camera purpose string says Tr3k places an AR collectible, a fortune cookie or a glowing pumpkin, and that nothing is recorded or uploaded. The motion string says the collectible stays in place while you look around.
+
+## Sign in with Apple
+
+Optional. The app launches without it. The session is the Apple user id plus name and email only when Apple sends them on the first grant. It is stored on the device in the app's own defaults (not the App Group, so the widget cannot read it). Identity tokens and authorization codes are not stored.
+
+```js
+const session = await tr3kNative.signInWithApple();
+// { signedIn: true, user, email?, fullName?, givenName?, familyName? }
+// Cancel: the stored session is left as-is, plus reason "canceled".
+// Failure: stored session left as-is, plus reason "failed" and
+// message "Sign in with Apple did not finish."
+// A second call while the sheet is up: reason "in_progress".
+// No presenter: reason "unavailable".
+
+const current = await tr3kNative.getAppleSession();
+// local read, no second prompt. { signedIn: false } or the stored session.
+
+await tr3kNative.signOutApple();
+// { signedIn: false }
+```
+
+The same user id merges a later grant with the name and email already stored. A different user id replaces the session. `signedIn` in a cancel or failure payload reflects what is still stored.
+
+The entitlement is `com.apple.developer.applesignin` = `Default` on `app.tr3k.ios` only.
+
+Joseph: enable Sign in with Apple on the App ID `app.tr3k.ios` (App Store Connect app `6824752752`) if the upload is rejected. The lane tries `APPLE_ID_AUTH` with primary app consent. The unsigned pull-request build does not need that toggle. Do not enable push.
 
 ## When the page is inside the app
 
@@ -269,6 +373,8 @@ These behaved the same way before the map work:
 - `haptic(kind)` → `{ played, kind }`
 - `startLiveActivity({ trekId, trekName, instruction, distanceText, etaText, stopName })`
 - `updateLiveActivity(partial)` / `endLiveActivity({ dismissal })`
-- `isARSupported()` / `openAR({ tier, prize })`
+- `isARSupported()` / `arStatus()` / `openAR({ tier, prize })` / `openSettings()`
+- `saveOfflineTreks({ key, v, at, nearby, active, lat, lng })` / `getOfflineTreks({ key })` / `clearOfflineTreks({ key })`
+- `signInWithApple()` / `getAppleSession()` / `signOutApple()`
 
 `navigator.geolocation` in the shell is still the native location stream.

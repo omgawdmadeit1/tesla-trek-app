@@ -42,22 +42,11 @@ final class Tr3kARViewController: UIViewController, ARSCNViewDelegate {
             finish(cracked: false, reason: "unsupported")
             return
         }
-        switch AVCaptureDevice.authorizationStatus(for: .video) {
-        case .authorized:
-            startSession()
-        case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .video) { granted in
-                DispatchQueue.main.async {
-                    if granted {
-                        self.startSession()
-                    } else {
-                        self.finish(cracked: false, reason: "camera_denied")
-                    }
-                }
-            }
-        default:
+        guard AVCaptureDevice.authorizationStatus(for: .video) == .authorized else {
             finish(cracked: false, reason: "camera_denied")
+            return
         }
+        startSession()
     }
 
     override func viewWillDisappear(_ animated: Bool) {

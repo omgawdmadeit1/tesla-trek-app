@@ -29,7 +29,7 @@ function setBool(key, value) {
 setString("CFBundleDisplayName", "Tr3k");
 setString(
   "NSCameraUsageDescription",
-  "Tr3k uses your camera to place a glowing pumpkin box in front of you so you can open your prize. Nothing is recorded or uploaded.",
+  "Tr3k uses the camera to place an AR collectible in front of you, a fortune cookie or a glowing pumpkin, so you can open it. Nothing is recorded or uploaded.",
 );
 setString(
   "NSLocationWhenInUseUsageDescription",
@@ -41,7 +41,7 @@ setString(
 );
 setString(
   "NSMotionUsageDescription",
-  "Tr3k uses your phone's motion sensors so the treasure stays in place while you look around in AR.",
+  "Tr3k uses motion so the AR collectible, the fortune cookie or pumpkin, stays in place while you look around.",
 );
 setBool("ITSAppUsesNonExemptEncryption", "false");
 setBool("NSSupportsLiveActivities", "true");
@@ -79,16 +79,30 @@ if (!plist.includes("<string>tr3k</string>")) {
 writeFileSync(plistPath, plist);
 
 const entitlementsPath = join(root, "ios/App/App/App.entitlements");
-if (!existsSync(entitlementsPath) || !readFileSync(entitlementsPath, "utf8").includes("applinks:tr3k.app")) {
+const entitlements = existsSync(entitlementsPath) ? readFileSync(entitlementsPath, "utf8") : "";
+const entitlementKeys = [
+  "applinks:tr3k.app",
+  "group.app.tr3k.ios",
+  "com.apple.developer.applesignin",
+];
+if (entitlementKeys.some((key) => !entitlements.includes(key))) {
   writeFileSync(
     entitlementsPath,
     `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+\t<key>com.apple.developer.applesignin</key>
+\t<array>
+\t\t<string>Default</string>
+\t</array>
 \t<key>com.apple.developer.associated-domains</key>
 \t<array>
 \t\t<string>applinks:tr3k.app</string>
+\t</array>
+\t<key>com.apple.security.application-groups</key>
+\t<array>
+\t\t<string>group.app.tr3k.ios</string>
 \t</array>
 </dict>
 </plist>
@@ -98,7 +112,8 @@ if (!existsSync(entitlementsPath) || !readFileSync(entitlementsPath, "utf8").inc
 
 let project = readFileSync(projectPath, "utf8");
 project = project.replace(/PRODUCT_BUNDLE_IDENTIFIER = ([^;]+);/g, (match, value) => {
-  if (value.trim() === "app.tr3k.ios.LiveActivity") return match;
+  const id = value.trim();
+  if (id === "app.tr3k.ios" || id.startsWith("app.tr3k.ios.")) return match;
   return "PRODUCT_BUNDLE_IDENTIFIER = app.tr3k.ios;";
 });
 if (!project.includes("DEVELOPMENT_TEAM = DQA38RTNF7;")) {
@@ -114,4 +129,4 @@ if (!project.includes("CODE_SIGN_ENTITLEMENTS = App/App.entitlements;")) {
   );
 }
 writeFileSync(projectPath, project);
-console.log("patched iOS display name, permissions, arrival alerts, links, Live Activity, bundle id, and team");
+console.log("patched iOS display name, permissions, arrival alerts, links, Live Activity, widget, bundle id, and team");

@@ -40,11 +40,19 @@ platform :ios do
 
       # The App Store Connect record already exists. Register the bundle id
       # on the developer portal when sigh would otherwise miss it.
-      # Associated Domains has to be on the App ID before sigh, or the
-      # applinks:tr3k.app entitlement is missing from the profile.
-      ensure_bundle_id(app_identifier: app_identifier, associated_domains: true)
+      # Associated Domains, App Groups, and Sign in with Apple have to be on
+      # the App ID before sigh, or those entitlements are missing from the profile.
+      app_group = "group.app.tr3k.ios"
+      ensure_bundle_id(
+        app_identifier: app_identifier,
+        associated_domains: true,
+        app_group: app_group,
+        sign_in_with_apple: true
+      )
       live_activity_id = "app.tr3k.ios.LiveActivity"
       ensure_bundle_id(app_identifier: live_activity_id, name: "Tr3k Live Activity")
+      widget_id = "app.tr3k.ios.widget"
+      ensure_bundle_id(app_identifier: widget_id, name: "Tr3k Widget", app_group: app_group)
 
       install_distribution_certificate(
         api_key: api_key,
@@ -98,6 +106,22 @@ platform :ios do
       UI.user_error!("sigh did not return a Live Activity profile UUID") if live_profile_uuid.to_s.empty?
       UI.user_error!("Live Activity profile UUID must not contain spaces") if live_profile_uuid.match?(/\s/)
 
+      sigh(
+        api_key: api_key,
+        app_identifier: widget_id,
+        team_id: team_id,
+        platform: "ios",
+        force: true,
+        cert_id: cert_id,
+        provisioning_name: "tr3k-widget-appstore",
+        ignore_profiles_with_different_name: true,
+        output_path: signing_dir,
+        filename: "tr3k-widget.mobileprovision"
+      )
+      widget_profile_uuid = lane_context[SharedValues::SIGH_UUID]
+      UI.user_error!("sigh did not return a widget profile UUID") if widget_profile_uuid.to_s.empty?
+      UI.user_error!("Widget profile UUID must not contain spaces") if widget_profile_uuid.match?(/\s/)
+
       update_code_signing_settings(
         use_automatic_signing: false,
         path: "ios/App/App.xcodeproj",
@@ -116,6 +140,15 @@ platform :ios do
         profile_name: live_profile_uuid,
         targets: ["Tr3kLiveActivity"]
       )
+      update_code_signing_settings(
+        use_automatic_signing: false,
+        path: "ios/App/App.xcodeproj",
+        team_id: team_id,
+        bundle_identifier: widget_id,
+        code_sign_identity: distribution_identity,
+        profile_name: widget_profile_uuid,
+        targets: ["Tr3kWidget"]
+      )
 
       build_app(
         project: "ios/App/App.xcodeproj",
@@ -129,7 +162,7 @@ platform :ios do
         codesigning_identity: distribution_identity,
         # Do not set PRODUCT_BUNDLE_IDENTIFIER or PROVISIONING_PROFILE_SPECIFIER
         # here. Those xcargs apply to every target, including the Live Activity
-        # extension, which has its own bundle id and profile.
+        # and widget extensions, which have their own bundle ids and profiles.
         xcargs: [
           "DEVELOPMENT_TEAM=#{team_id}",
           "CURRENT_PROJECT_VERSION=#{build_number}",
@@ -142,7 +175,8 @@ platform :ios do
           signingCertificate: distribution_identity,
           provisioningProfiles: {
             app_identifier => profile_uuid,
-            live_activity_id => live_profile_uuid
+            live_activity_id => live_profile_uuid,
+            widget_id => widget_profile_uuid
           }
         }
       )
@@ -220,13 +254,83 @@ platform :ios do
     end
 
     if options[:associated_domains]
-      type = Spaceship::ConnectAPI::BundleIdCapability::Type::ASSOCIATED_DOMAINS
+      ensure_capability(
+        bundle: bundle,
+        type: Spaceship::ConnectAPI::BundleIdCapability::Type::ASSOCIATED_DOMAINS,
+        hint: "Enable Associated Domains on #{identifier} for team DQA38RTNF7."
+      )
+    end
+
+    if options[:app_group]
+      group = options[:app_group]
+      ensure_capability(
+        bundle: bundle,
+        type: Spaceship::ConnectAPI::BundleIdCapability::Type::APP_GROUPS,
+        settings: [{
+          key: "APP_GROUPS",
+          options: [{ key: group }]
+        }],
+        hint: "Create the App Group #{group} (name Tr3k) and assign it to #{identifier} on team DQA38RTNF7."
+      )
+    end
+
+    if options[:sign_in_with_apple]
+      ensure_capability(
+        bundle: bundle,
+        type: Spaceship::ConnectAPI::BundleIdCapability::Type::APPLE_ID_AUTH,
+        settings: [{
+          key: "APPLE_ID_AUTH_APP_CONSENT",
+          options: [{ key: "PRIMARY_APP_CONSENT" }]
+        }],
+        hint: "Enable Sign in with Apple on the App ID #{identifier} for team DQA38RTNF7. App Store Connect app 6824752752."
+      )
+    end
+  end
+
+  # Turns a capability on before sigh so the profile contains the entitlement.
+  # Settings are tried first (the App Group id, or Sign in with Apple consent).
+  # If Apple rejects the settings shape, the capability is still enabled and
+  # the hint says which portal toggle Joseph has to confirm.
+  private_lane :ensure_capability do |options|
+    bundle = options[:bundle]
+    type = options[:type]
+    settings = options[:settings] || []
+    hint = options[:hint].to_s
+    identifier = bundle.identifier
+
+    begin
       capabilities = bundle.get_capabilities
-      if capabilities.any? { |cap| cap.is_type?(type) }
-        UI.message("Associated Domains is already enabled for #{identifier}.")
+    rescue StandardError => error
+      UI.user_error!("Could not read capabilities for #{identifier}: #{error.message}. #{hint}")
+    end
+
+    already = capabilities.any? { |cap| cap.is_type?(type) }
+    begin
+      if already
+        unless settings.empty?
+          bundle.update_capability(type, enabled: true, settings: settings)
+        end
+        UI.message("#{type} is enabled for #{identifier}.")
       else
-        bundle.create_capability(type)
-        UI.success("Enabled Associated Domains for #{identifier}.")
+        bundle.create_capability(type, settings: settings)
+        UI.success("Enabled #{type} for #{identifier}.")
+      end
+    rescue StandardError => error
+      if settings.empty?
+        UI.user_error!("Could not enable #{type} for #{identifier}: #{error.message}. #{hint}")
+      else
+        UI.important("#{type} settings were not accepted for #{identifier}: #{error.message}")
+        UI.important(hint) unless hint.empty?
+        if already
+          UI.important("#{type} stays enabled for #{identifier}. Confirm the portal setting.")
+        else
+          begin
+            bundle.create_capability(type)
+            UI.important("Enabled #{type} for #{identifier} without extra settings. #{hint}")
+          rescue StandardError => retry_error
+            UI.user_error!("Could not enable #{type} for #{identifier}: #{retry_error.message}. #{hint}")
+          end
+        end
       end
     end
   end

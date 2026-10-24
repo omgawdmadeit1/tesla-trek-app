@@ -64,23 +64,69 @@ assert(plist.includes("<string>tr3k</string>"), "tr3k URL scheme");
 assert(plist.includes("<key>NSSupportsLiveActivities</key>"), "Live Activities flag");
 assert(plist.includes("Tr3k stop arrival"), "Always purpose mentions Tr3k stop arrival");
 
+assert(plist.includes("fortune cookie"), "camera purpose mentions the fortune cookie");
+assert(plist.includes("glowing pumpkin"), "camera purpose mentions the glowing pumpkin");
+assert(plist.includes("AR collectible"), "motion purpose mentions the AR collectible");
+
 const entitlements = readFileSync(join(root, "ios/App/App/App.entitlements"), "utf8");
 assert(entitlements.includes("applinks:tr3k.app"), "associated domain applinks:tr3k.app");
+assert(entitlements.includes("group.app.tr3k.ios"), "app group on the app");
+assert(entitlements.includes("com.apple.developer.applesignin"), "Sign in with Apple entitlement");
+
+const widgetEntitlements = readFileSync(join(root, "ios/App/Tr3kWidget/Tr3kWidget.entitlements"), "utf8");
+assert(widgetEntitlements.includes("group.app.tr3k.ios"), "app group on the widget");
+
+const widgetPlist = readFileSync(join(root, "ios/App/Tr3kWidget/Info.plist"), "utf8");
+assert(widgetPlist.includes("com.apple.widgetkit-extension"), "home screen widget extension point");
 
 const shim = readFileSync(join(root, "plugins/tr3k-native/ios/Sources/Tr3kNativePlugin/Tr3kNativeShim.swift"), "utf8");
-assert(shim.includes("version: 3"), "native shim version 3");
+assert(shim.includes("version: 4"), "native shim version 4");
+assert(shim.includes("tr3knativeready"), "native ready event");
 assert(shim.includes("tr3kdeepLink"), "deep link event name");
+assert(shim.includes("saveOfflineTreks:"), "saveOfflineTreks");
+assert(shim.includes("saveOffline:"), "saveOffline alias");
+assert(shim.includes("offlineSave:"), "offlineSave alias");
+assert(shim.includes("getOfflineTreks:"), "getOfflineTreks");
+assert(shim.includes("getOffline:"), "getOffline alias");
+assert(shim.includes("offlineGet:"), "offlineGet alias");
+assert(shim.includes("clearOfflineTreks:"), "clearOfflineTreks");
+assert(shim.includes("clearOffline:"), "clearOffline alias");
+assert(shim.includes("offlineClear:"), "offlineClear alias");
+assert(shim.includes("signInWithApple:"), "signInWithApple");
+assert(shim.includes("getAppleSession:"), "getAppleSession");
+assert(shim.includes("signOutApple:"), "signOutApple");
+assert(shim.includes("openSettings:"), "openSettings");
+assert(shim.includes("arStatus:"), "arStatus");
 
 const nativeReadme = readFileSync(join(root, "plugins/tr3k-native/README.md"), "utf8");
+assert(nativeReadme.includes("currently **4**"), "shim version 4 is documented");
 assert(nativeReadme.includes("startLiveActivity"), "Live Activity is documented");
 assert(nativeReadme.includes("https://tr3k.app/play/?trek=<id>"), "canonical Tr3k URL");
 assert(nativeReadme.includes("haptic"), "haptics are documented");
+assert(nativeReadme.includes("saveOfflineTreks"), "offline save is documented");
+assert(nativeReadme.includes("getOfflineTreks"), "offline get is documented");
+assert(nativeReadme.includes("clearOfflineTreks"), "offline clear is documented");
+assert(nativeReadme.includes("signInWithApple"), "Sign in with Apple is documented");
+assert(nativeReadme.includes("group.app.tr3k.ios"), "app group is documented");
 
 const project = readFileSync(join(root, "ios/App/App.xcodeproj/project.pbxproj"), "utf8");
 assert(project.includes("app.tr3k.ios.LiveActivity"), "Live Activity bundle id");
-assert(project.includes("productName = Tr3kActivityKit"), "widget links Tr3kActivityKit");
+assert(project.includes("app.tr3k.ios.widget"), "home screen widget bundle id");
+assert(project.includes("productName = Tr3kActivityKit"), "Live Activity links Tr3kActivityKit");
+assert(project.includes("productName = Tr3kAppGroup"), "widget links Tr3kAppGroup");
 assert(project.includes("CODE_SIGN_ENTITLEMENTS = App/App.entitlements;"), "app entitlements");
 assert(project.includes("PRODUCT_BUNDLE_IDENTIFIER = app.tr3k.ios;"), "app bundle id");
+
+const nativePackage = readFileSync(join(root, "plugins/tr3k-native/Package.swift"), "utf8");
+assert(nativePackage.includes("-disable-autolink-framework"), "ActivityKit stays weakly linked");
+assert(nativePackage.includes("\"-weak_framework\", \"ActivityKit\""), "ActivityKit weak framework flag");
+
+const fastfile = readFileSync(join(root, "fastlane/Fastfile"), "utf8");
+assert(fastfile.includes("app.tr3k.ios.widget"), "widget bundle id in the signing lane");
+assert(fastfile.includes("tr3k-widget-appstore"), "widget provisioning profile name");
+assert(fastfile.includes("APPLE_ID_AUTH"), "Sign in with Apple capability");
+assert(fastfile.includes("group.app.tr3k.ios"), "app group in the signing lane");
+assert(!fastfile.includes("skip_waiting_for_build_processing: false"), "TestFlight still skips waiting");
 
 const flight = readFileSync(join(root, "public/get/testflight.js"), "utf8");
 assert(flight.includes("export const TESTFLIGHT_URL"), "TESTFLIGHT_URL constant");
