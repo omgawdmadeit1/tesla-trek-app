@@ -7,7 +7,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // Arm stop-region monitoring before UIKit returns so a relaunch caused by
+        // an arrival can deliver the local notification. The plugin repeats this
+        // once the bridge exists; both calls are safe.
+        if let monitor = NSClassFromString("Tr3kArrivalMonitor") as? NSObject.Type {
+            let selector = NSSelectorFromString("prepareForRelaunch")
+            if monitor.responds(to: selector) {
+                _ = monitor.perform(selector)
+            }
+        }
         return true
     }
 

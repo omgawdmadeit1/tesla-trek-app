@@ -71,7 +71,24 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Tr3k uses your precise location to show nearby treasure hunts, give turn-by-turn directions, and confirm you have reached each Tr3k stop.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Allow Tr3k to use your location in the background so it can alert you the moment you arrive at a Tr3k stop, even when the app is closed. Tr3k only watches for the stops on your current hunt.</string>
+	<string>Tr3k uses your location in the background to send Tr3k stop arrival alerts when you reach a stop on your current hunt, even if Tr3k is not open. Tr3k only watches the stops on that hunt.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>app.tr3k.ios</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>tr3k</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSMotionUsageDescription</key>
 	<string>Tr3k uses your phone's motion sensors so the treasure stays in place while you look around in AR.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>

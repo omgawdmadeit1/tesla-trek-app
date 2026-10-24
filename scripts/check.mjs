@@ -58,6 +58,30 @@ const config = readFileSync(join(root, "capacitor.config.json"), "utf8");
 assert(config.includes('"appId": "app.tr3k.ios"'), "bundle id");
 assert(config.includes('"appName": "Tr3k"'), "app name");
 
+const plist = readFileSync(join(root, "ios/App/App/Info.plist"), "utf8");
+assert(plist.includes("<string>location</string>"), "background location mode");
+assert(plist.includes("<string>tr3k</string>"), "tr3k URL scheme");
+assert(plist.includes("<key>NSSupportsLiveActivities</key>"), "Live Activities flag");
+assert(plist.includes("Tr3k stop arrival"), "Always purpose mentions Tr3k stop arrival");
+
+const entitlements = readFileSync(join(root, "ios/App/App/App.entitlements"), "utf8");
+assert(entitlements.includes("applinks:tr3k.app"), "associated domain applinks:tr3k.app");
+
+const shim = readFileSync(join(root, "plugins/tr3k-native/ios/Sources/Tr3kNativePlugin/Tr3kNativeShim.swift"), "utf8");
+assert(shim.includes("version: 3"), "native shim version 3");
+assert(shim.includes("tr3kdeepLink"), "deep link event name");
+
+const nativeReadme = readFileSync(join(root, "plugins/tr3k-native/README.md"), "utf8");
+assert(nativeReadme.includes("startLiveActivity"), "Live Activity is documented");
+assert(nativeReadme.includes("https://tr3k.app/play/?trek=<id>"), "canonical Tr3k URL");
+assert(nativeReadme.includes("haptic"), "haptics are documented");
+
+const project = readFileSync(join(root, "ios/App/App.xcodeproj/project.pbxproj"), "utf8");
+assert(project.includes("app.tr3k.ios.LiveActivity"), "Live Activity bundle id");
+assert(project.includes("productName = Tr3kActivityKit"), "widget links Tr3kActivityKit");
+assert(project.includes("CODE_SIGN_ENTITLEMENTS = App/App.entitlements;"), "app entitlements");
+assert(project.includes("PRODUCT_BUNDLE_IDENTIFIER = app.tr3k.ios;"), "app bundle id");
+
 const flight = readFileSync(join(root, "public/get/testflight.js"), "utf8");
 assert(flight.includes("export const TESTFLIGHT_URL"), "TESTFLIGHT_URL constant");
 assert(flight.includes("REPLACE_ME"), "TestFlight link is still a placeholder");

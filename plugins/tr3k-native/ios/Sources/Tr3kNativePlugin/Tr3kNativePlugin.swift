@@ -1,12 +1,13 @@
 import ARKit
 import Capacitor
 import CoreLocation
+import Tr3kActivityKit
 import UIKit
 import UserNotifications
 import WebKit
 
 @objc(Tr3kNativePlugin)
-public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate, UNUserNotificationCenterDelegate {
+public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate {
     public let identifier = "Tr3kNativePlugin"
     public let jsName = "Tr3kNative"
     public let pluginMethods: [CAPPluginMethod] = [
@@ -17,6 +18,12 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
         CAPPluginMethod(name: "requestNotifications", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setStops", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clearStops", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "share", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getLastDeepLink", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "haptic", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "startLiveActivity", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "updateLiveActivity", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "endLiveActivity", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isARSupported", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openAR", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isNativeMapSupported", returnType: CAPPluginReturnPromise),
@@ -33,26 +40,54 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
         CAPPluginMethod(name: "clearRoute", returnType: CAPPluginReturnPromise)
     ]
 
-    private static let regionPrefix = "tr3k-stop-"
-    private static let maxRegions = 20
-
     private var manager: CLLocationManager!
     private var pendingFixes: [CAPPluginCall] = []
     private var pendingAuth: [CAPPluginCall] = []
     private var watching = false
-    private var arrivalTitle = "You've arrived at a Tr3k stop"
-    private var arrivalBody = "Open Tr3k to check in."
-    private var stopNames: [String: String] = [:]
     private var mapController: Tr3kNativeMapController?
+    private var upgradeAlwaysAfterWhenInUse = false
+    private var didPromptAlways = false
+    private var pendingAlwaysUpgrade = false
+    private var lastDeepLink: [String: Any]?
+    private var deepLinkSerial: Double = 0
+    private var lastDeliveredURL: String?
+    private var lastDeliveredAt: TimeInterval = 0
 
     override public func load() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleOpenURL(_:)),
+            name: .capacitorOpenURL,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleOpenURL(_:)),
+            name: .capacitorOpenUniversalLink,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appWillEnterForeground),
+            name: UIApplication.willEnterForegroundNotification,
+            object: nil
+        )
+        Tr3kArrivalMonitor.prepareForRelaunch()
+        Tr3kArrivalMonitor.shared.onArrival = { [weak self] stopId in
+            self?.notifyListeners("arrival", data: ["stopId": stopId], retainUntilConsumed: true)
+        }
         DispatchQueue.main.async {
-            self.manager = CLLocationManager()
-            self.manager.delegate = self
-            self.manager.desiredAccuracy = kCLLocationAccuracyBest
-            self.manager.distanceFilter = kCLDistanceFilterNone
-            self.manager.activityType = .fitness
-            UNUserNotificationCenter.current().delegate = self
+            self.ensureLocationManager()
+            if self.pendingAlwaysUpgrade {
+                self.pendingAlwaysUpgrade = false
+                self.ensureAlwaysAuthorization()
+            }
             self.injectShim()
         }
     }
@@ -64,7 +99,30 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
         let script = WKUserScript(source: Tr3kNativeShim.source, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         webView.configuration.userContentController.addUserScript(script)
         // Cover a page that already started loading before the plugin was ready.
-        webView.evaluateJavaScript(Tr3kNativeShim.source, completionHandler: nil)
+        webView.evaluateJavaScript(Tr3kNativeShim.source) { [weak self] _, _ in
+            guard let self, let lastDeepLink = self.lastDeepLink else { return }
+            self.emitDeepLink(lastDeepLink)
+        }
+    }
+
+    /// Region alerts keep working in the background. Continuous GPS does not.
+    @objc private func appDidEnterBackground() {
+        guard manager != nil else { return }
+        manager.stopUpdatingLocation()
+        manager.stopUpdatingHeading()
+    }
+
+    @objc private func appWillEnterForeground() {
+        guard manager != nil else { return }
+        guard isAuthorized(authStatus()) else { return }
+        if watching || !pendingFixes.isEmpty || mapController?.wantsFollow == true {
+            manager.startUpdatingLocation()
+        }
+        if mapController?.wantsFollowHeading == true {
+            applyHeadingOrientation()
+            manager.headingFilter = 5
+            manager.startUpdatingHeading()
+        }
     }
 
     // MARK: Location
@@ -102,18 +160,67 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
 
     @objc override public func requestPermissions(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
+            self.ensureLocationManager()
             let always = call.getBool("always") ?? false
             let status = self.authStatus()
             if status == .notDetermined {
                 self.pendingAuth.append(call)
+                if always { self.upgradeAlwaysAfterWhenInUse = true }
                 self.manager.requestWhenInUseAuthorization()
             } else if always && status == .authorizedWhenInUse {
-                self.pendingAuth.append(call)
+                // Resolve now. Choosing "Keep Only While Using" does not change
+                // the status, so the delegate may not run again.
+                self.didPromptAlways = true
                 self.manager.requestAlwaysAuthorization()
+                call.resolve(self.authPayload(alwaysPrompted: true))
             } else {
-                call.resolve(["location": self.statusName(status)])
+                call.resolve(self.authPayload(alwaysPrompted: false))
             }
         }
+    }
+
+    private func authPayload(alwaysPrompted: Bool) -> [String: Any] {
+        let status = authStatus()
+        return [
+            "location": statusName(status),
+            "alwaysPrompted": alwaysPrompted,
+            "backgroundAlerts": status == .authorizedAlways
+        ]
+    }
+
+    /// When In Use first, then Always. A denied Always upgrade leaves When In Use in place.
+    private func ensureAlwaysAuthorization() {
+        guard manager != nil else {
+            pendingAlwaysUpgrade = true
+            return
+        }
+        switch authStatus() {
+        case .notDetermined:
+            upgradeAlwaysAfterWhenInUse = true
+            manager.requestWhenInUseAuthorization()
+        case .authorizedWhenInUse:
+            guard !didPromptAlways else { return }
+            didPromptAlways = true
+            manager.requestAlwaysAuthorization()
+        default:
+            break
+        }
+    }
+
+    private func ensureLocationManager() {
+        if manager != nil { return }
+        manager = CLLocationManager()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyBest
+        manager.distanceFilter = kCLDistanceFilterNone
+        manager.activityType = .fitness
+    }
+
+    private func resolvePendingAuth(alwaysPrompted: Bool) {
+        let calls = pendingAuth
+        pendingAuth.removeAll()
+        let payload = authPayload(alwaysPrompted: alwaysPrompted)
+        calls.forEach { $0.resolve(payload) }
     }
 
     @objc func getLocation(_ call: CAPPluginCall) {
@@ -170,10 +277,14 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
 
     public func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         let status = manager.authorizationStatus
-        if status != .notDetermined {
-            let calls = pendingAuth
-            pendingAuth.removeAll()
-            calls.forEach { $0.resolve(["location": statusName(status)]) }
+        if status == .authorizedWhenInUse && upgradeAlwaysAfterWhenInUse {
+            upgradeAlwaysAfterWhenInUse = false
+            didPromptAlways = true
+            resolvePendingAuth(alwaysPrompted: true)
+            manager.requestAlwaysAuthorization()
+        } else if status != .notDetermined {
+            upgradeAlwaysAfterWhenInUse = false
+            resolvePendingAuth(alwaysPrompted: false)
         }
         if isAuthorized(status) {
             if watching || !pendingFixes.isEmpty || mapController?.wantsFollow == true {
@@ -237,73 +348,143 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
     @objc func setStops(_ call: CAPPluginCall) {
         let stops = call.getArray("stops", JSObject.self) ?? []
         let radius = call.getDouble("radius") ?? 75
+        let title = call.getString("title")
+        let body = call.getString("body")
         DispatchQueue.main.async {
-            guard CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) else {
-                call.resolve(["monitored": 0, "supported": false])
-                return
-            }
-            if let t = call.getString("title"), !t.isEmpty { self.arrivalTitle = t }
-            if let b = call.getString("body"), !b.isEmpty { self.arrivalBody = b }
-            self.clearMonitoredRegions()
-            let r = min(max(radius, 30), self.manager.maximumRegionMonitoringDistance)
-            var count = 0
-            for (i, stop) in stops.prefix(Tr3kNativePlugin.maxRegions).enumerated() {
-                guard let lat = number(stop["lat"]) ?? number(stop["latitude"]),
-                      let lng = number(stop["lng"]) ?? number(stop["lon"]) ?? number(stop["longitude"]) else { continue }
-                let rawId = (stop["id"] as? String) ?? number(stop["id"]).map { String(Int($0)) } ?? String(i)
-                let id = Tr3kNativePlugin.regionPrefix + rawId
-                let region = CLCircularRegion(center: CLLocationCoordinate2D(latitude: lat, longitude: lng), radius: r, identifier: id)
-                region.notifyOnEntry = true
-                region.notifyOnExit = false
-                if let name = stop["name"] as? String { self.stopNames[id] = name }
-                self.manager.startMonitoring(for: region)
-                count += 1
-            }
-            // Region monitoring only fires with "Always" access; ask for the upgrade.
-            if self.authStatus() == .authorizedWhenInUse || self.authStatus() == .notDetermined {
-                self.manager.requestAlwaysAuthorization()
-            }
+            self.ensureLocationManager()
+            self.ensureAlwaysAuthorization()
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
-            call.resolve(["monitored": count, "supported": true, "location": self.statusName(self.authStatus())])
+            var result = Tr3kArrivalMonitor.shared.replaceStops(stops, radius: radius, title: title, body: body)
+            let status = self.authStatus()
+            result["location"] = self.statusName(status)
+            result["backgroundAlerts"] = status == .authorizedAlways
+            call.resolve(result)
         }
     }
 
     @objc func clearStops(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
-            self.clearMonitoredRegions()
+            Tr3kArrivalMonitor.shared.clear()
             call.resolve()
         }
     }
 
-    private func clearMonitoredRegions() {
-        for region in manager.monitoredRegions where region.identifier.hasPrefix(Tr3kNativePlugin.regionPrefix) {
-            manager.stopMonitoring(for: region)
+    // MARK: Share sheet and deep links
+
+    @objc func share(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let presenter = self.topPresenter() else {
+                call.reject("The app view is not ready.")
+                return
+            }
+            Tr3kShareSheet.present(
+                title: call.getString("title"),
+                text: call.getString("text"),
+                urlString: call.getString("url"),
+                from: presenter
+            ) { completed in
+                call.resolve(["completed": completed])
+            }
         }
-        stopNames.removeAll()
     }
 
-    public func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
-        guard region.identifier.hasPrefix(Tr3kNativePlugin.regionPrefix) else { return }
-        let stopId = String(region.identifier.dropFirst(Tr3kNativePlugin.regionPrefix.count))
-        let content = UNMutableNotificationContent()
-        content.title = arrivalTitle
-        if let name = stopNames[region.identifier] { content.subtitle = name }
-        content.body = arrivalBody
-        content.sound = .default
-        content.userInfo = ["tr3kStopId": stopId]
-        let request = UNNotificationRequest(identifier: "arrival-\(region.identifier)", content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
-        notifyListeners("arrival", data: ["stopId": stopId], retainUntilConsumed: true)
+    @objc func getLastDeepLink(_ call: CAPPluginCall) {
+        if let lastDeepLink {
+            call.resolve(lastDeepLink)
+        } else {
+            call.resolve([:])
+        }
     }
 
-    public func locationManager(_ manager: CLLocationManager, monitoringDidFailFor region: CLRegion?, withError error: Error) {
-        notifyListeners("locationError", data: ["message": "Stop alert failed: \(error.localizedDescription)"])
+    @objc private func handleOpenURL(_ notification: Notification) {
+        guard let url = Tr3kDeepLink.url(from: notification) else { return }
+        let key = url.absoluteString
+        let now = Date().timeIntervalSince1970
+        if key == lastDeliveredURL && now - lastDeliveredAt < 1.5 { return }
+        guard let payload = Tr3kDeepLink.payload(for: url, issuedAt: nextIssuedAt()) else { return }
+        lastDeliveredURL = key
+        lastDeliveredAt = now
+        lastDeepLink = payload
+        notifyListeners("deepLink", data: payload, retainUntilConsumed: true)
+        emitDeepLink(payload)
     }
 
-    public func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                       willPresent notification: UNNotification,
-                                       withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.banner, .sound, .list])
+    private func nextIssuedAt() -> Double {
+        deepLinkSerial += 1
+        return Date().timeIntervalSince1970 * 1000 + deepLinkSerial
+    }
+
+    private func emitDeepLink(_ payload: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8) else { return }
+        let script = "window.__tr3kDeliverDeepLink && window.__tr3kDeliverDeepLink(\(json))"
+        DispatchQueue.main.async {
+            self.bridge?.webView?.evaluateJavaScript(script, completionHandler: nil)
+        }
+    }
+
+    private func topPresenter() -> UIViewController? {
+        var current = bridge?.viewController
+        while let presented = current?.presentedViewController {
+            current = presented
+        }
+        return current
+    }
+
+    // MARK: Haptics and Live Activity
+
+    @objc func haptic(_ call: CAPPluginCall) {
+        let kind = call.getString("kind") ?? call.getString("type") ?? "medium"
+        DispatchQueue.main.async {
+            let played = Tr3kHaptics.play(kind)
+            call.resolve(["played": played, "kind": kind])
+        }
+    }
+
+    @objc func startLiveActivity(_ call: CAPPluginCall) {
+        let fields = call.jsObjectRepresentation
+        Task { @MainActor in
+            guard #available(iOS 16.2, *) else {
+                call.resolve(["started": false, "reason": "unsupported"])
+                return
+            }
+            guard Tr3kLiveActivityController.activitiesEnabled() else {
+                call.resolve(["started": false, "reason": "disabled"])
+                return
+            }
+            let trekId = Tr3kLiveActivityController.text(fields["trekId"]) ?? ""
+            let trekName = Tr3kLiveActivityController.text(fields["trekName"]) ?? "Tr3k"
+            do {
+                let id = try await Tr3kLiveActivityController.start(trekId: trekId, trekName: trekName, fields: fields)
+                call.resolve(["started": true, "id": id])
+            } catch {
+                call.resolve(["started": false, "reason": error.localizedDescription])
+            }
+        }
+    }
+
+    @objc func updateLiveActivity(_ call: CAPPluginCall) {
+        let fields = call.jsObjectRepresentation
+        Task { @MainActor in
+            guard #available(iOS 16.2, *) else {
+                call.resolve(["updated": false, "reason": "unsupported"])
+                return
+            }
+            let updated = await Tr3kLiveActivityController.update(fields: fields)
+            call.resolve(["updated": updated])
+        }
+    }
+
+    @objc func endLiveActivity(_ call: CAPPluginCall) {
+        let immediate = (call.getString("dismissal") ?? "immediate") != "default"
+        Task { @MainActor in
+            guard #available(iOS 16.2, *) else {
+                call.resolve(["ended": false, "reason": "unsupported"])
+                return
+            }
+            await Tr3kLiveActivityController.end(immediate: immediate)
+            call.resolve(["ended": true])
+        }
     }
 
     // MARK: AR pumpkin box
@@ -480,15 +661,5 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
         @unknown default:
             manager.headingOrientation = .portrait
         }
-    }
-}
-
-private func number(_ value: Any?) -> Double? {
-    switch value {
-    case let d as Double: return d
-    case let i as Int: return Double(i)
-    case let n as NSNumber: return n.doubleValue
-    case let s as String: return Double(s)
-    default: return nil
     }
 }
