@@ -63,3 +63,16 @@ export const TREK = {
 };
 
 export const TESTFLIGHT_PLACEHOLDER = "REPLACE_ME";
+
+/**
+ * X Live Drop for one stop. Set `url` to a Space or Chat link when one exists.
+ * Leave it empty for the Internal demo: the phone opens the X app with no
+ * Space id and no token. `type` is "space" or "chat".
+ */
+export const LIVE_DROP = {
+  stopId: "buford-dr-3500",
+  type: "space",
+  url: "",
+  title: "Live",
+  unlockRadiusM: 75,
+};

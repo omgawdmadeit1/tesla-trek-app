@@ -58,6 +58,32 @@ if (!plist.includes("<key>UIBackgroundModes</key>")) {
   );
 }
 
+if (!plist.includes("<key>LSApplicationQueriesSchemes</key>")) {
+  plist = plist.replace(
+    "</dict>\n</plist>",
+    `\t<key>LSApplicationQueriesSchemes</key>
+\t<array>
+\t\t<string>twitter</string>
+\t\t<string>x</string>
+\t</array>
+</dict>
+</plist>`,
+  );
+} else {
+  if (!plist.includes("<string>twitter</string>")) {
+    plist = plist.replace(
+      "<key>LSApplicationQueriesSchemes</key>\n\t<array>",
+      "<key>LSApplicationQueriesSchemes</key>\n\t<array>\n\t\t<string>twitter</string>",
+    );
+  }
+  if (!plist.includes("<string>x</string>")) {
+    plist = plist.replace(
+      "<key>LSApplicationQueriesSchemes</key>\n\t<array>",
+      "<key>LSApplicationQueriesSchemes</key>\n\t<array>\n\t\t<string>x</string>",
+    );
+  }
+}
+
 if (!plist.includes("<string>tr3k</string>")) {
   plist = plist.replace(
     "</dict>\n</plist>",

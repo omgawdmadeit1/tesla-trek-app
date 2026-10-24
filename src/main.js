@@ -5,7 +5,8 @@ import { activeStop, distanceMeters, formatDistance, inRange, needsParkGate, rar
 import { mountMap } from "./map-view.js";
 import { rarityColor } from "./rarity.js";
 import { loadState, saveState } from "./store.js";
-import { TREK } from "./trek.js";
+import { bindLiveDrop } from "./live-drop.js";
+import { LIVE_DROP, TREK } from "./trek.js";
 
 const state = loadState();
 let user = null;
@@ -63,6 +64,21 @@ document.querySelector("#demo").addEventListener("click", () => tryCheckIn(true)
 
 render();
 show("trek");
+bindLiveDrop({
+  drop: LIVE_DROP,
+  stops: TREK.stops.map((stop) => ({
+    id: stop.id,
+    name: stop.name,
+    lat: stop.lat,
+    lng: stop.lng,
+  })),
+  onShow() {
+    StatusBar.setStyle({ style: Style.Light }).catch(() => {});
+  },
+  onHide() {
+    StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
+  },
+});
 
 function show(screen) {
   const trekVisible = screen === "trek";

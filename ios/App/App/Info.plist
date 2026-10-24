@@ -89,6 +89,11 @@
 			</array>
 		</dict>
 	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>twitter</string>
+		<string>x</string>
+	</array>
 	<key>NSMotionUsageDescription</key>
 	<string>Tr3k uses motion so the AR collectible, the fortune cookie or pumpkin, stays in place while you look around.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>

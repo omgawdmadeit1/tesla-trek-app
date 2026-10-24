@@ -20,6 +20,15 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
         CAPPluginMethod(name: "requestNotifications", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setStops", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clearStops", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setLiveDrop", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setLiveDrops", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getLiveDrop", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getLiveDrops", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clearLiveDrops", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openXLiveDrop", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "previewLiveDrop", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getLastLiveDrop", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setLiveDropSurface", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "share", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getLastDeepLink", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "haptic", returnType: CAPPluginReturnPromise),
@@ -63,6 +72,12 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
     private var lastDeliveredURL: String?
     private var lastDeliveredAt: TimeInterval = 0
     private var appleSignIn: Tr3kAppleSignIn?
+    private var webPresentsLiveDrop = false
+    private var liveDropSurfaceMark: Double = 0
+    private var sheetWork: DispatchWorkItem?
+    private var pendingSheetDrop: Tr3kLiveDrop?
+    private var lastLiveDrop: [String: Any]?
+    private var lastLiveDropAt: [String: TimeInterval] = [:]
 
     override public func load() {
         NotificationCenter.default.addObserver(
@@ -89,9 +104,17 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
             name: UIApplication.willEnterForegroundNotification,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
         Tr3kArrivalMonitor.prepareForRelaunch()
         Tr3kArrivalMonitor.shared.onArrival = { [weak self] stopId in
-            self?.notifyListeners("arrival", data: ["stopId": stopId], retainUntilConsumed: true)
+            guard let self else { return }
+            self.notifyListeners("arrival", data: ["stopId": stopId], retainUntilConsumed: true)
+            self.unlockArrivedStop(stopId)
         }
         DispatchQueue.main.async {
             self.ensureLocationManager()
@@ -121,6 +144,14 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
         guard manager != nil else { return }
         manager.stopUpdatingLocation()
         manager.stopUpdatingHeading()
+    }
+
+    @objc private func appDidBecomeActive() {
+        guard let drop = pendingSheetDrop else { return }
+        pendingSheetDrop = nil
+        guard !webPresentsLiveDrop else { return }
+        presentLiveDropSheet(drop)
+        Tr3kHaptics.play("strong")
     }
 
     @objc private func appWillEnterForeground() {
@@ -365,6 +396,7 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
             self.ensureLocationManager()
             self.ensureAlwaysAuthorization()
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+            self.ingestStopDrops(stops)
             var result = Tr3kArrivalMonitor.shared.replaceStops(stops, radius: radius, title: title, body: body)
             let status = self.authStatus()
             result["location"] = self.statusName(status)
@@ -377,6 +409,232 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
         DispatchQueue.main.async {
             Tr3kArrivalMonitor.shared.clear()
             call.resolve()
+        }
+    }
+
+    // MARK: X Live Drop
+
+    @objc func setLiveDrop(_ call: CAPPluginCall) {
+        let raw = call.jsObjectRepresentation
+        DispatchQueue.main.async {
+            guard let drop = Tr3kLiveDropStore.shared.save(raw) else {
+                call.resolve(["saved": false, "reason": "invalid"])
+                return
+            }
+            call.resolve(["saved": true, "stopId": drop.stopId, "type": drop.type])
+        }
+    }
+
+    @objc func setLiveDrops(_ call: CAPPluginCall) {
+        let drops = call.getArray("drops", JSObject.self) ?? []
+        let replace = call.getBool("replace") ?? true
+        DispatchQueue.main.async {
+            let saved = Tr3kLiveDropStore.shared.replace(drops, replaceAll: replace)
+            call.resolve([
+                "saved": saved.count,
+                "drops": saved.map { $0.queryFields() }
+            ])
+        }
+    }
+
+    @objc func getLiveDrop(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let id = Tr3kLiveDropStore.cleanStopId(call.getString("stopId")),
+                  let drop = Tr3kLiveDropStore.shared.drop(for: id) else {
+                call.resolve(["found": false])
+                return
+            }
+            call.resolve(drop.queryFields())
+        }
+    }
+
+    @objc func getLiveDrops(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            call.resolve(["drops": Tr3kLiveDropStore.shared.all().map { $0.queryFields() }])
+        }
+    }
+
+    @objc func clearLiveDrops(_ call: CAPPluginCall) {
+        let stopId = call.getString("stopId")
+        DispatchQueue.main.async {
+            let cleared = Tr3kLiveDropStore.shared.clear(stopId: stopId)
+            var payload: [String: Any] = ["cleared": cleared]
+            if let stopId { payload["stopId"] = stopId }
+            call.resolve(payload)
+        }
+    }
+
+    @objc func openXLiveDrop(_ call: CAPPluginCall) {
+        let raw = call.getString("url") ?? call.getString("deepLink") ?? ""
+        openLiveDropURL(raw, call: call, fallback: nil)
+    }
+
+    @objc func previewLiveDrop(_ call: CAPPluginCall) {
+        let raw = call.jsObjectRepresentation
+        DispatchQueue.main.async {
+            let provided = ((raw["url"] as? String) ?? (raw["deepLink"] as? String) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !provided.isEmpty {
+                guard let drop = Tr3kLiveDropStore.parse(raw, allowMissingURL: false) else {
+                    call.resolve(["shown": false, "reason": "invalid"])
+                    return
+                }
+                if drop.stopId != "demo" {
+                    _ = Tr3kLiveDropStore.shared.save(drop.storedFields())
+                }
+                self.emitLiveDrop(drop, source: "preview")
+                call.resolve(["shown": true, "stopId": drop.stopId, "type": drop.type, "demo": drop.demo])
+                return
+            }
+            if let id = Tr3kLiveDropStore.cleanStopId(call.getString("stopId") ?? (raw["stopId"] as? String)),
+               let stored = Tr3kLiveDropStore.shared.drop(for: id) {
+                self.emitLiveDrop(stored, source: "preview")
+                call.resolve(["shown": true, "stopId": stored.stopId, "type": stored.type, "demo": stored.demo])
+                return
+            }
+            if Tr3kLiveDropStore.cleanStopId(raw["stopId"]) == nil,
+               let stored = Tr3kLiveDropStore.shared.all().first {
+                self.emitLiveDrop(stored, source: "preview")
+                call.resolve(["shown": true, "stopId": stored.stopId, "type": stored.type, "demo": stored.demo])
+                return
+            }
+            guard let demo = Tr3kLiveDropStore.parse(["stopId": "demo", "type": "space"], allowMissingURL: true) else {
+                call.resolve(["shown": false, "reason": "invalid"])
+                return
+            }
+            self.emitLiveDrop(demo, source: "preview")
+            call.resolve(["shown": true, "stopId": demo.stopId, "type": demo.type, "demo": true])
+        }
+    }
+
+    @objc func getLastLiveDrop(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            if let last = self.lastLiveDrop {
+                call.resolve(last)
+            } else {
+                call.resolve(["found": false])
+            }
+        }
+    }
+
+    @objc func setLiveDropSurface(_ call: CAPPluginCall) {
+        let owner = call.getString("owner") == "web" ? "web" : "native"
+        let gen = call.getDouble("gen") ?? 0
+        DispatchQueue.main.async {
+            let claimed: Bool
+            if owner == "web" {
+                claimed = gen == 0 || gen >= self.liveDropSurfaceMark
+            } else {
+                // Same-generation native reset must not clobber a web claim
+                // that was already applied for this page load.
+                claimed = gen == 0 || gen > self.liveDropSurfaceMark
+            }
+            if claimed {
+                if gen > self.liveDropSurfaceMark { self.liveDropSurfaceMark = gen }
+                self.webPresentsLiveDrop = owner == "web"
+                if self.webPresentsLiveDrop {
+                    self.sheetWork?.cancel()
+                    self.sheetWork = nil
+                    self.pendingSheetDrop = nil
+                    Tr3kLiveDropSheet.dismissIfNeeded()
+                }
+            }
+            call.resolve(["owner": self.webPresentsLiveDrop ? "web" : "native"])
+        }
+    }
+
+    private func ingestStopDrops(_ stops: [JSObject]) {
+        for stop in stops {
+            guard var fields = Tr3kLiveDropStore.dictionary(stop["liveDrop"]) else { continue }
+            if fields["stopId"] == nil {
+                fields["stopId"] = stop["id"] ?? ""
+            }
+            _ = Tr3kLiveDropStore.shared.save(fields)
+        }
+    }
+
+    private func unlockArrivedStop(_ stopId: String) {
+        guard let drop = Tr3kLiveDropStore.shared.drop(for: stopId) else { return }
+        emitLiveDrop(drop, source: "arrival")
+    }
+
+    private func emitLiveDrop(_ drop: Tr3kLiveDrop, source: String) {
+        let send = { self.emitLiveDropOnMain(drop, source: source) }
+        if Thread.isMainThread {
+            send()
+        } else {
+            DispatchQueue.main.async(execute: send)
+        }
+    }
+
+    private func emitLiveDropOnMain(_ drop: Tr3kLiveDrop, source: String) {
+        if source == "arrival" {
+            let now = Date().timeIntervalSince1970
+            if let last = lastLiveDropAt[drop.stopId], now - last < 30 { return }
+            lastLiveDropAt[drop.stopId] = now
+        }
+        Tr3kHaptics.play("strong")
+        let payload = drop.eventFields(
+            source: source,
+            unlockId: UUID().uuidString,
+            issuedAt: Date().timeIntervalSince1970 * 1000
+        )
+        lastLiveDrop = payload
+        notifyListeners("liveDropUnlock", data: payload, retainUntilConsumed: true)
+        scheduleLiveDropSheet(drop)
+    }
+
+    private func scheduleLiveDropSheet(_ drop: Tr3kLiveDrop) {
+        guard !webPresentsLiveDrop else { return }
+        sheetWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.webPresentsLiveDrop else { return }
+            if UIApplication.shared.applicationState == .background {
+                self.pendingSheetDrop = drop
+                return
+            }
+            self.presentLiveDropSheet(drop)
+        }
+        sheetWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
+    }
+
+    private func presentLiveDropSheet(_ drop: Tr3kLiveDrop, attempt: Int = 0) {
+        guard !webPresentsLiveDrop else { return }
+        guard let presenter = topPresenter() else {
+            if attempt < 8 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                    self?.presentLiveDropSheet(drop, attempt: attempt + 1)
+                }
+            } else {
+                pendingSheetDrop = drop
+            }
+            return
+        }
+        if let existing = presenter as? Tr3kLiveDropSheet {
+            existing.render(drop)
+            return
+        }
+        Tr3kLiveDropSheet.present(drop: drop, from: presenter) { [weak self] url in
+            self?.openLiveDropURL(url, call: nil, fallback: drop)
+        }
+    }
+
+    private func openLiveDropURL(_ raw: String, call: CAPPluginCall?, fallback: Tr3kLiveDrop?) {
+        Tr3kXLink.open(raw) { [weak self] result in
+            if let call {
+                var payload: [String: Any] = ["opened": result.opened]
+                if result.opened, let url = result.url {
+                    payload["url"] = url
+                    if let via = result.via { payload["via"] = via }
+                } else {
+                    payload["reason"] = result.reason ?? "unavailable"
+                }
+                call.resolve(payload)
+            }
+            if !result.opened, let fallback, let self, !self.webPresentsLiveDrop {
+                self.presentLiveDropSheet(fallback)
+            }
         }
     }
 
@@ -418,6 +676,9 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
         lastDeepLink = payload
         notifyListeners("deepLink", data: payload, retainUntilConsumed: true)
         emitDeepLink(payload)
+        if let drop = Tr3kLiveDropLink.drop(from: url) {
+            emitLiveDrop(drop, source: "preview")
+        }
     }
 
     private func nextIssuedAt() -> Double {

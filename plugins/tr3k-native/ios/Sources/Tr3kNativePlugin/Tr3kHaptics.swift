@@ -30,6 +30,11 @@ enum Tr3kHaptics {
         case "success":
             notification.prepare()
             notification.notificationOccurred(.success)
+        case "strong":
+            heavy.prepare()
+            heavy.impactOccurred(intensity: 1)
+            notification.prepare()
+            notification.notificationOccurred(.success)
         case "warning":
             notification.prepare()
             notification.notificationOccurred(.warning)

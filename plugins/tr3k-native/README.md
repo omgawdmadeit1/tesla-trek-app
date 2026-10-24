@@ -1,12 +1,14 @@
 # Tr3k native bridge
 
-iOS-only Capacitor plugin (`jsName` `Tr3kNative`). The shell injects `window.tr3kNative` at document start on every page, including `https://tr3k.app/play/`. Shim version is `window.tr3kNative.version` (currently **4**).
+iOS-only Capacitor plugin (`jsName` `Tr3kNative`). The shell injects `window.tr3kNative` at document start on every page, including `https://tr3k.app/play/`. Shim version is `window.tr3kNative.version` (currently **5**).
 
 Version 2 is the MapKit map (`MKMapCamera` pitch and Apple's 3D buildings). The browser keeps its own map. This plugin does not load MapKit JS and does not need a MapKit token.
 
 Version 3 adds three product paths on the same object: background Tr3k stop arrival alerts, the share sheet plus deep links, and haptics plus a local Live Activity. Map, location watch, and `openAR` stay as they were.
 
 Version 4 adds the on-device offline cache (the same record feeds the home screen widget), AR camera status plus Settings, and an optional Sign in with Apple session. Every call returns a Promise. The shim still fires `tr3knativeready` at document start.
+
+Version 5 adds the X Live Drop. A stop can carry a Space or a group Chat. Arrival plays a strong haptic and emits `liveDropUnlock`. The page draws the moment, or the shell does when the page has not subscribed. `openXLiveDrop` hands off to the X app. There is no X token and no chat server.
 
 ## Background location and arrival alerts
 
@@ -103,7 +105,60 @@ await tr3kNative.haptic("success");  // arrival
 await tr3kNative.haptic("warning");
 ```
 
-Also accepted: `heavy`, `soft`, `rigid`, `error`, `selection`. An unknown kind resolves `{ played: false, kind }` and does not throw. `haptic({ kind: "success" })` works too. These are impact and notification generators on the phone. The web nav loop should call them; the native arrival notification does not vibrate by itself.
+Also accepted: `heavy`, `soft`, `rigid`, `error`, `selection`, and `strong` (heavy impact plus a success notification, used when a live drop unlocks). An unknown kind resolves `{ played: false, kind }` and does not throw. `haptic({ kind: "success" })` works too. These are impact and notification generators on the phone. The web nav loop should call them; the native arrival notification does not vibrate by itself. The live drop unlock does.
+
+## X Live Drop
+
+Geo-gated handoff into an X Space or X group Chat. The page registers the drop. The existing stop geofence is the unlock. Payloads stay slim: `stopId`, `type` (`"space"` or `"chat"`), `url` (or `deepLink`), optional `title`, optional `unlockRadiusM`. No tokens, no message bodies, no custom chat.
+
+```js
+await tr3kNative.setLiveDrop({
+  stopId: "buford-dr-3500",
+  type: "space", // or "chat"
+  url: "https://x.com/i/spaces/YOUR_SPACE_ID",
+  title: "Live",
+  unlockRadiusM: 75
+});
+// { saved: true, stopId, type }
+// { saved: false, reason: "invalid" } when the id or the X url is rejected
+
+const drop = await tr3kNative.getLiveDrop("buford-dr-3500");
+// { found: true, stopId, type, url, title?, unlockRadiusM?, demo }
+// { found: false } when that stop has no drop
+
+await tr3kNative.setLiveDrops([ /* same objects */ ]); // replace: true
+await tr3kNative.clearLiveDrops();                      // or clearLiveDrops(stopId)
+```
+
+`setStops` still arms the regions. Pass the same `unlockRadiusM` as `radius` so the geofence matches the drop. A stop may also include `liveDrop: { type, url, title?, unlockRadiusM? }` and `setStops` will save it. `clearStops` does not remove drops; call `clearLiveDrops`.
+
+Empty `url` is not stored. For an Internal demo with no Space id, send the public handoff `https://x.com/i/spaces` (or `https://x.com/messages` for chat) and `demo: true`. The launch page does that when its config url is empty. Do not put a token in the url.
+
+When a monitored stop with a drop is entered, the shell plays `haptic("strong")` and emits `liveDropUnlock` (`retainUntilConsumed`). The same stop will not emit again for 30 seconds.
+
+```js
+tr3kNative.onLiveDropUnlock((event) => {
+  // event: { stopId, type, url, title?, unlockRadiusM?, demo, source, unlockId, issuedAt }
+  // source is "arrival" or "preview". issuedAt is milliseconds.
+  // Draw one black screen, one button, one line: "Only people at this stop."
+  const opened = await tr3kNative.openXLiveDrop(event.url);
+  // { opened: true, url, via } via is "x", "twitter", or "https"
+  // { opened: false, reason: "invalid" | "unavailable" }
+});
+```
+
+`onLiveDropUnlock` tells the shell the page owns the surface, so the native sheet stays down. Events older than three minutes are ignored. If the page never subscribes, the shell shows that same sheet: black, system type, huge headline, one button (`JOIN 𝕏 SPACE` or `JOIN 𝕏 CHAT`), and the line "Only people at this stop." Swipe down dismisses. The sheet is also what you get if the web view is not ready when the geofence fires, including a relaunch from a background arrival. The drop is restored from device defaults (`tr3k.livedrop.v1`).
+
+`openXLiveDrop` tries `x://`, then `twitter://`, then `https://x.com/...`. A Space id becomes `x://spaces/<id>`, `twitter://spaces/<id>`, and `https://x.com/i/spaces/<id>`. Chat uses `x://messages` and `twitter://messages`, then the https link you passed. Hosts other than `x.com` and `twitter.com` are rejected. Info.plist `LSApplicationQueriesSchemes` includes `twitter` and `x` so the shell can see whether the app is installed.
+
+```js
+await tr3kNative.previewLiveDrop();                         // saved drop, or the demo
+await tr3kNative.previewLiveDrop({ stopId: "buford-dr-3500" });
+```
+
+`previewLiveDrop` is the same haptic and event without walking to the pin. Internal testers can also open `tr3k://live-drop`, `https://tr3k.app/play/?liveDrop=1`, or `?liveDrop=` plus an `https://x.com/...` url. `?liveDropType=chat` selects chat. Nothing in that link is a secret.
+
+Arm the regions with Always location, then walk into the stop, or run the preview. The button leaves Tr3k and opens X.
 
 ## Live Activity
 
@@ -368,6 +423,11 @@ These behaved the same way before the map work:
 - `setStops(stops, { radius, title, body })` → `{ monitored, pending, supported, location, backgroundAlerts }`
 - `clearStops()`
 - `onArrival(cb)` → `{ stopId }`
+- `setLiveDrop({ stopId, type, url, title?, unlockRadiusM? })` → `{ saved, stopId?, type?, reason? }`
+- `setLiveDrops({ drops, replace })` / `getLiveDrop(stopId)` / `getLiveDrops()` / `clearLiveDrops({ stopId? })`
+- `openXLiveDrop(url)` → `{ opened, url?, via?, reason? }`
+- `onLiveDropUnlock(cb)` → `{ stopId, type, url, title?, demo, source, unlockId, issuedAt }`
+- `previewLiveDrop({ stopId?, url?, type?, title? })` → `{ shown, stopId?, type?, demo? }`
 - `share({ title, text, url })` → `{ completed }`
 - `getLastDeepLink()` / `onDeepLink(cb)` and the `tr3kdeepLink` window event
 - `haptic(kind)` → `{ played, kind }`
