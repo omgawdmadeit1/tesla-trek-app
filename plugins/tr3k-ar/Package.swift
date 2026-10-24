@@ -22,7 +22,8 @@ let package = Package(
             path: "ios/Sources/Tr3kARPlugin",
             linkerSettings: [
                 .linkedFramework("ARKit"),
-                .linkedFramework("SceneKit")
+                .linkedFramework("SceneKit"),
+                .linkedFramework("AVFoundation")
             ])
     ]
 )

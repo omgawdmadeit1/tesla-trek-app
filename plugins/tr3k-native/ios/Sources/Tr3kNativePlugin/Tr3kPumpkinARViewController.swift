@@ -42,18 +42,11 @@ final class Tr3kPumpkinARViewController: UIViewController, ARSCNViewDelegate {
             finish(opened: false, reason: "unsupported")
             return
         }
-        switch AVCaptureDevice.authorizationStatus(for: .video) {
-        case .authorized:
-            startSession()
-        case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .video) { granted in
-                DispatchQueue.main.async {
-                    granted ? self.startSession() : self.finish(opened: false, reason: "camera_denied")
-                }
-            }
-        default:
+        guard AVCaptureDevice.authorizationStatus(for: .video) == .authorized else {
             finish(opened: false, reason: "camera_denied")
+            return
         }
+        startSession()
     }
 
     override func viewWillDisappear(_ animated: Bool) {

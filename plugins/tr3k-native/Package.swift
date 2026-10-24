@@ -10,7 +10,10 @@ let package = Package(
             targets: ["Tr3kNativePlugin"]),
         .library(
             name: "Tr3kActivityKit",
-            targets: ["Tr3kActivityKit"])
+            targets: ["Tr3kActivityKit"]),
+        .library(
+            name: "Tr3kAppGroup",
+            targets: ["Tr3kAppGroup"])
     ],
     dependencies: [
         .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", from: "8.0.0")
@@ -33,20 +36,28 @@ let package = Package(
             ]
         ),
         .target(
+            name: "Tr3kAppGroup",
+            path: "ios/Sources/Tr3kAppGroup"
+        ),
+        .target(
             name: "Tr3kNativePlugin",
             dependencies: [
                 .product(name: "Capacitor", package: "capacitor-swift-pm"),
                 .product(name: "Cordova", package: "capacitor-swift-pm"),
-                "Tr3kActivityKit"
+                "Tr3kActivityKit",
+                "Tr3kAppGroup"
             ],
             path: "ios/Sources/Tr3kNativePlugin",
             linkerSettings: [
                 .linkedFramework("ARKit"),
                 .linkedFramework("SceneKit"),
+                .linkedFramework("AVFoundation"),
                 .linkedFramework("CoreLocation"),
                 .linkedFramework("UserNotifications"),
                 .linkedFramework("MapKit"),
-                .linkedFramework("LinkPresentation")
+                .linkedFramework("LinkPresentation"),
+                .linkedFramework("WidgetKit"),
+                .linkedFramework("AuthenticationServices")
             ])
     ]
 )

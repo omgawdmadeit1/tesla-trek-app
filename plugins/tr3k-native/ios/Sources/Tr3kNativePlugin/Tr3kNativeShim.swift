@@ -2,8 +2,8 @@ import Foundation
 
 /// Injected at document start into every page the shell loads (including https://tr3k.app/play).
 /// Exposes window.tr3kNative and upgrades navigator.geolocation to native Core Location.
-/// Map, arrival, share, haptics, and Live Activity methods (shim version 3)
-/// are documented in plugins/tr3k-native/README.md.
+/// Map, arrival, share, haptics, Live Activity, offline cache, and Sign in with Apple
+/// methods (shim version 4) are documented in plugins/tr3k-native/README.md.
 enum Tr3kNativeShim {
     static let source = #"""
 (function () {
@@ -57,7 +57,7 @@ enum Tr3kNativeShim {
   var api = {
     __native: true,
     platform: "ios",
-    version: 3,
+    version: 4,
     getLocation: function (opts) { return call("getLocation", opts).then(toPosition); },
     watchLocation: function (onPos, onErr) {
       var id = nextId++;
@@ -83,7 +83,9 @@ enum Tr3kNativeShim {
       return p.addListener("arrival", cb);
     },
     isARSupported: function () { return call("isARSupported", {}).then(function (r) { return !!(r && r.supported); }); },
+    arStatus: function () { return call("arStatus", {}); },
     openAR: function (opts) { return call("openAR", opts || {}); },
+    openSettings: function () { return call("openSettings", {}); },
     isNativeMapSupported: function () {
       var p = plugin();
       if (!p || typeof p.isNativeMapSupported !== "function") return Promise.resolve(false);
@@ -140,6 +142,18 @@ enum Tr3kNativeShim {
     startLiveActivity: function (opts) { return call("startLiveActivity", opts || {}); },
     updateLiveActivity: function (opts) { return call("updateLiveActivity", opts || {}); },
     endLiveActivity: function (opts) { return call("endLiveActivity", opts || {}); },
+    saveOfflineTreks: function (payload) { return call("saveOfflineTreks", payload || {}); },
+    saveOffline: function (payload) { return call("saveOfflineTreks", payload || {}); },
+    offlineSave: function (payload) { return call("saveOfflineTreks", payload || {}); },
+    getOfflineTreks: function (opts) { return call("getOfflineTreks", opts || {}); },
+    getOffline: function (opts) { return call("getOfflineTreks", opts || {}); },
+    offlineGet: function (opts) { return call("getOfflineTreks", opts || {}); },
+    clearOfflineTreks: function (opts) { return call("clearOfflineTreks", opts || {}); },
+    clearOffline: function (opts) { return call("clearOfflineTreks", opts || {}); },
+    offlineClear: function (opts) { return call("clearOfflineTreks", opts || {}); },
+    signInWithApple: function () { return call("signInWithApple", {}); },
+    getAppleSession: function () { return call("getAppleSession", {}); },
+    signOutApple: function () { return call("signOutApple", {}); },
     onMapReady: function (cb) { return listen("mapReady", cb); },
     onFollowPaused: function (cb) { return listen("followPaused", cb); },
     onCameraChanged: function (cb) { return listen("cameraChanged", cb); },
