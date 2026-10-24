@@ -1,7 +1,8 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { activeStop, chooseCrackMode, distanceMeters, inRange, needsParkGate, rarityLabel } from "../src/logic.js";
-import { TREK } from "../src/trek.js";
+import { joinLabel, liveDropHeadline, resolveLiveDrop } from "../src/live-drop.js";
+import { LIVE_DROP, TREK } from "../src/trek.js";
 
 const root = new URL("..", import.meta.url).pathname;
 let failed = 0;
@@ -61,6 +62,9 @@ assert(config.includes('"appName": "Tr3k"'), "app name");
 const plist = readFileSync(join(root, "ios/App/App/Info.plist"), "utf8");
 assert(plist.includes("<string>location</string>"), "background location mode");
 assert(plist.includes("<string>tr3k</string>"), "tr3k URL scheme");
+assert(plist.includes("<key>LSApplicationQueriesSchemes</key>"), "X app query schemes");
+assert(plist.includes("<string>twitter</string>"), "twitter query scheme");
+assert(plist.includes("<string>x</string>"), "x query scheme");
 assert(plist.includes("<key>NSSupportsLiveActivities</key>"), "Live Activities flag");
 assert(plist.includes("Tr3k stop arrival"), "Always purpose mentions Tr3k stop arrival");
 
@@ -80,7 +84,13 @@ const widgetPlist = readFileSync(join(root, "ios/App/Tr3kWidget/Info.plist"), "u
 assert(widgetPlist.includes("com.apple.widgetkit-extension"), "home screen widget extension point");
 
 const shim = readFileSync(join(root, "plugins/tr3k-native/ios/Sources/Tr3kNativePlugin/Tr3kNativeShim.swift"), "utf8");
-assert(shim.includes("version: 4"), "native shim version 4");
+assert(shim.includes("version: 5"), "native shim version 5");
+assert(!shim.includes("version: 4"), "shim version is no longer 4");
+assert(shim.includes("setLiveDrop:"), "setLiveDrop");
+assert(shim.includes("openXLiveDrop:"), "openXLiveDrop");
+assert(shim.includes("onLiveDropUnlock:"), "onLiveDropUnlock");
+assert(shim.includes("previewLiveDrop:"), "previewLiveDrop");
+assert(shim.includes("liveDropUnlock"), "live drop event name");
 assert(shim.includes("tr3knativeready"), "native ready event");
 assert(shim.includes("tr3kdeepLink"), "deep link event name");
 assert(shim.includes("saveOfflineTreks:"), "saveOfflineTreks");
@@ -99,7 +109,10 @@ assert(shim.includes("openSettings:"), "openSettings");
 assert(shim.includes("arStatus:"), "arStatus");
 
 const nativeReadme = readFileSync(join(root, "plugins/tr3k-native/README.md"), "utf8");
-assert(nativeReadme.includes("currently **4**"), "shim version 4 is documented");
+assert(nativeReadme.includes("currently **5**"), "shim version 5 is documented");
+assert(nativeReadme.includes("openXLiveDrop"), "X Live Drop is documented");
+assert(nativeReadme.includes("onLiveDropUnlock"), "live drop unlock is documented");
+assert(nativeReadme.includes("Only people at this stop."), "live drop microcopy is documented");
 assert(nativeReadme.includes("startLiveActivity"), "Live Activity is documented");
 assert(nativeReadme.includes("https://tr3k.app/play/?trek=<id>"), "canonical Tr3k URL");
 assert(nativeReadme.includes("haptic"), "haptics are documented");
@@ -120,6 +133,44 @@ assert(project.includes("PRODUCT_BUNDLE_IDENTIFIER = app.tr3k.ios;"), "app bundl
 const nativePackage = readFileSync(join(root, "plugins/tr3k-native/Package.swift"), "utf8");
 assert(nativePackage.includes("-disable-autolink-framework"), "ActivityKit stays weakly linked");
 assert(nativePackage.includes("\"-weak_framework\", \"ActivityKit\""), "ActivityKit weak framework flag");
+
+const liveDropJs = readFileSync(join(root, "src/live-drop.js"), "utf8");
+const liveDropSwift = readFileSync(join(root, "plugins/tr3k-native/ios/Sources/Tr3kNativePlugin/Tr3kLiveDrop.swift"), "utf8");
+const patchIos = readFileSync(join(root, "scripts/patch-ios.mjs"), "utf8");
+assert(patchIos.includes("LSApplicationQueriesSchemes"), "patch keeps X query schemes");
+assert(liveDropSwift.includes(joinLabel("space")), "native space label matches");
+assert(liveDropSwift.includes(joinLabel("chat")), "native chat label matches");
+assert(liveDropSwift.includes("Only people at this stop."), "native note matches");
+assert(liveDropSwift.includes("x://spaces/"), "space deep link");
+assert(liveDropSwift.includes("twitter://spaces/"), "legacy space deep link");
+assert(liveDropSwift.includes("https://x.com/i/spaces/"), "space https fallback");
+assert(liveDropJs.includes("Only people at this stop."), "web note matches");
+
+assert(LIVE_DROP.stopId === TREK.stops[0].id, "live drop is armed on stop 1");
+assert(LIVE_DROP.url === "", "live drop url ships empty");
+assert(LIVE_DROP.type === "space", "launch live drop is a space");
+assert(LIVE_DROP.unlockRadiusM === 75, "live drop radius is 75 m");
+
+const demo = resolveLiveDrop(LIVE_DROP);
+assert(demo && demo.demo === true, "empty url is a demo drop");
+assert(demo.url === "https://x.com/i/spaces", "demo space url");
+assert(demo.type === "space", "demo type");
+assert(joinLabel("space") === "JOIN 𝕏 SPACE", "space label");
+assert(joinLabel("chat") === "JOIN 𝕏 CHAT", "chat label");
+assert(liveDropHeadline("Live") === "LIVE", "short title becomes the headline");
+assert(liveDropHeadline("") === "LIVE", "missing title is LIVE");
+const chatDemo = resolveLiveDrop({ stopId: "buford-dr-3500", type: "chat", url: "" });
+assert(chatDemo && chatDemo.url === "https://x.com/messages", "demo chat url");
+const real = resolveLiveDrop({
+  stopId: "buford-dr-3500",
+  type: "space",
+  url: "https://x.com/i/spaces/abc123",
+  title: "Live",
+  unlockRadiusM: 75,
+});
+assert(real && real.demo === false && real.url === "https://x.com/i/spaces/abc123", "configured space url is kept");
+assert(resolveLiveDrop({ stopId: "buford-dr-3500", type: "space", url: "https://evil.example/spaces/abc" }) === null, "non-X url is rejected");
+assert(resolveLiveDrop({ stopId: "", type: "space", url: "" }) === null, "missing stop id is rejected");
 
 const fastfile = readFileSync(join(root, "fastlane/Fastfile"), "utf8");
 assert(fastfile.includes("app.tr3k.ios.widget"), "widget bundle id in the signing lane");

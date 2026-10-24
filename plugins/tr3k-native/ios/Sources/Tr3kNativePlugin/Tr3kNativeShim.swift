@@ -2,8 +2,8 @@ import Foundation
 
 /// Injected at document start into every page the shell loads (including https://tr3k.app/play).
 /// Exposes window.tr3kNative and upgrades navigator.geolocation to native Core Location.
-/// Map, arrival, share, haptics, Live Activity, offline cache, and Sign in with Apple
-/// methods (shim version 4) are documented in plugins/tr3k-native/README.md.
+/// Map, arrival, share, haptics, Live Activity, offline cache, Sign in with Apple,
+/// and X Live Drop methods (shim version 5) are documented in plugins/tr3k-native/README.md.
 enum Tr3kNativeShim {
     static let source = #"""
 (function () {
@@ -54,10 +54,11 @@ enum Tr3kNativeShim {
     if (!p || typeof p.addListener !== "function") return null;
     return p.addListener(event, cb);
   }
+  var surfaceGen = Date.now() + Math.random();
   var api = {
     __native: true,
     platform: "ios",
-    version: 4,
+    version: 5,
     getLocation: function (opts) { return call("getLocation", opts).then(toPosition); },
     watchLocation: function (onPos, onErr) {
       var id = nextId++;
@@ -154,6 +155,57 @@ enum Tr3kNativeShim {
     signInWithApple: function () { return call("signInWithApple", {}); },
     getAppleSession: function () { return call("getAppleSession", {}); },
     signOutApple: function () { return call("signOutApple", {}); },
+    // Live drop (shim v5). Payloads are ids, urls, and names only. No tokens.
+    // setLiveDrop({ stopId, type: "space"|"chat", url or deepLink, title?, unlockRadiusM? })
+    //   -> { saved, stopId?, type?, reason? }
+    // setLiveDrops(drops) or setLiveDrops({ drops, replace }) replaces the set unless replace is false.
+    // getLiveDrop(stopId) -> { found, stopId?, type?, url?, title?, unlockRadiusM?, demo? }
+    // getLiveDrops() -> { drops }
+    // clearLiveDrops() or clearLiveDrops({ stopId }) or clearLiveDrops(stopId)
+    // openXLiveDrop(url) prefers the X app (x://, then twitter://), then https://x.com/...
+    //   -> { opened, url?, via?, reason? }  via is "x", "twitter", or "https"
+    // onLiveDropUnlock(cb) draws the moment in the page. The event is
+    //   { stopId, type, url, title?, unlockRadiusM?, demo, source, unlockId, issuedAt }.
+    //   Events older than three minutes are dropped. source is "arrival" or "preview".
+    //   Subscribing claims the web surface so the native sheet stays down.
+    //   Skip this call and the shell shows the same black JOIN sheet itself.
+    // previewLiveDrop() or previewLiveDrop({ stopId, url, type, title }) fires the
+    //   unlock without a geofence so Internal testers can see it.
+    // Arrival of a stop that has a drop also emits liveDropUnlock and haptic("strong").
+    setLiveDrop: function (drop) { return call("setLiveDrop", drop || {}); },
+    setLiveDrops: function (drops) {
+      if (drops && !Array.isArray(drops)) return call("setLiveDrops", drops);
+      return call("setLiveDrops", { drops: drops || [], replace: true });
+    },
+    getLiveDrop: function (stopId) {
+      if (stopId && typeof stopId === "object") return call("getLiveDrop", stopId);
+      return call("getLiveDrop", { stopId: stopId || "" });
+    },
+    getLiveDrops: function () { return call("getLiveDrops", {}); },
+    clearLiveDrops: function (opts) {
+      if (typeof opts === "string") return call("clearLiveDrops", { stopId: opts });
+      return call("clearLiveDrops", opts || {});
+    },
+    openXLiveDrop: function (url) {
+      if (url && typeof url === "object") return call("openXLiveDrop", url);
+      return call("openXLiveDrop", { url: url || "" });
+    },
+    previewLiveDrop: function (opts) { return call("previewLiveDrop", opts || {}); },
+    getLastLiveDrop: function () { return call("getLastLiveDrop", {}); },
+    setLiveDropSurface: function (opts) { return call("setLiveDropSurface", opts || {}); },
+    onLiveDropUnlock: function (cb) {
+      if (typeof cb !== "function") return null;
+      call("setLiveDropSurface", { owner: "web", gen: surfaceGen }).catch(function () {});
+      var saw = null;
+      function emit(detail) {
+        if (!detail || !detail.stopId || !detail.unlockId) return;
+        if (detail.issuedAt && Date.now() - detail.issuedAt > 180000) return;
+        if (saw === detail.unlockId) return;
+        saw = detail.unlockId;
+        try { cb(detail); } catch (e) {}
+      }
+      return listen("liveDropUnlock", emit);
+    },
     onMapReady: function (cb) { return listen("mapReady", cb); },
     onFollowPaused: function (cb) { return listen("followPaused", cb); },
     onCameraChanged: function (cb) { return listen("cameraChanged", cb); },
@@ -168,6 +220,7 @@ enum Tr3kNativeShim {
   }
   window.__tr3kDeliverDeepLink = deliverDeepLink;
   window.tr3kNative = api;
+  call("setLiveDropSurface", { owner: "native", gen: surfaceGen }).catch(function () {});
   call("getLastDeepLink", {}).then(function (data) { deliverDeepLink(data); }).catch(function () {});
 
   try {

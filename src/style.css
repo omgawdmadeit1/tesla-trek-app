@@ -230,3 +230,54 @@ body.driving .fine { font-size: 15px; }
 @media (min-width: 840px) {
   .sheet, .gate { left: auto; width: min(420px, 40vw); right: 20px; }
 }
+
+/* X Live Drop. Isolated from the map theme: black, white, system type, one button. */
+#x-live {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: max(24px, env(safe-area-inset-top)) 24px max(28px, env(safe-area-inset-bottom));
+  background: #000;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+}
+#x-live[hidden] { display: none !important; }
+#x-live h1 {
+  flex: 1;
+  margin: 0;
+  padding-top: 18vh;
+  max-width: 10ch;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+  font-size: clamp(72px, 22vw, 120px);
+  font-weight: 700;
+  letter-spacing: -0.05em;
+  line-height: 0.86;
+}
+#x-live button {
+  appearance: none;
+  width: 100%;
+  height: 64px;
+  margin: 0;
+  border: 0;
+  border-radius: 8px;
+  background: #fff;
+  color: #000;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+#x-live p {
+  margin: 14px 0 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.2;
+  text-align: center;
+}
