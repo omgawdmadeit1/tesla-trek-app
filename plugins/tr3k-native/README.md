@@ -275,9 +275,15 @@ Saving or clearing reloads the home screen widget. The widget reads the default 
 
 ## Home screen widget
 
-Widget extension bundle id `app.tr3k.ios.widget`, kind `app.tr3k.ios.widget.home`. Small and medium, branded Tr3k (`#14110e` with the orange accent). It shows "Tr3ks near you", the last active Tr3k, or "Start Tr3k" when the cache is empty.
+Widget extension bundle id `app.tr3k.ios.widget`, kind `app.tr3k.ios.widget.home`. Small and medium. Black field, white type, gold `TR3K` wordmark only.
 
-A tap opens `https://tr3k.app/play/?trek=<id>` when the ref is a Tr3k, or `?quest=<id>` when `kind` is `"quest"`. The small widget uses the active ref when one is saved, otherwise the single nearby ref, otherwise `https://tr3k.app/play/`. The medium widget gives each row its own link. There is no separate widget JS API: `saveOfflineTreks` on the default key is what refreshes it.
+The small widget is one line, for example `3 Tr3ks near you · Sunset Glow Walk`. The medium widget lists one or two of those titles. A saved `title` (the play page's themed name) wins over the map `name`. The active Tr3k stays a `Continue · …` line when one is saved.
+
+Titles come from the App Group record the play page writes with `saveOfflineTreks`. On each timeline reload (about an hour, or sooner when iOS budgets it, and whenever location permission or the fix changes) the widget calls the same endpoint the play page uses: `GET https://tr3k.app/api/nearby?lat=&lng=&r=12000&v=0`. The coordinate is the last Core Location fix, then the lat/lng stored with the cache. Ids that are still in that response keep the themed title already saved. A non-JSON response leaves the snapshot as it was. There is no second cache and no separate widget JS API.
+
+Denied, restricted, or not-yet-granted location with nothing to show reads `Enable location for nearby Tr3ks`. It does not crash. A tap still opens the app.
+
+A tap on the small widget opens `https://tr3k.app/play/` when more than one Tr3k is nearby, `https://tr3k.app/play/?trek=<id>` when that is the only one, or `?quest=<id>` when `kind` is `"quest"`. The active Tr3k's link is used only when the nearby list is empty. The medium widget gives each title its own link. `saveOfflineTreks` on the default key still reloads the widget immediately.
 
 The widget and the app share the App Group. The Live Activity target does not.
 

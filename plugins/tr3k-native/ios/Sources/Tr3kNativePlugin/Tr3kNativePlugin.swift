@@ -83,6 +83,8 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
     private var lastLiveDropAt: [String: TimeInterval] = [:]
     /// True while the native map is up and GPS should continue with the screen locked.
     private var keepBackgroundLocation = false
+    private var widgetLocationNote: CLLocation?
+    private var widgetLocationNotedAt: Date?
 
     override public func load() {
         NotificationCenter.default.addObserver(
@@ -310,6 +312,7 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
         manager.desiredAccuracy = kCLLocationAccuracyBest
         manager.distanceFilter = kCLDistanceFilterNone
         manager.activityType = .fitness
+        publishWidgetLocation(manager.location, status: manager.authorizationStatus, force: true)
     }
 
     private func resolvePendingAuth(alwaysPrompted: Bool) {
@@ -373,6 +376,7 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
 
     public func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         let status = manager.authorizationStatus
+        publishWidgetLocation(manager.location, status: status, force: true)
         if status == .authorizedWhenInUse && upgradeAlwaysAfterWhenInUse {
             upgradeAlwaysAfterWhenInUse = false
             didPromptAlways = true
@@ -420,6 +424,7 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
                 Tr3kLiveActivityMirror.shared.noteLocation(lat: lat, lng: lng, speed: speed)
             }
         }
+        publishWidgetLocation(loc, status: manager.authorizationStatus, force: false)
         if !watching && pendingFixes.isEmpty && mapController?.wantsFollow != true && !keepBackgroundLocation {
             manager.stopUpdatingLocation()
         }
@@ -1146,6 +1151,34 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
             manager.headingOrientation = .portrait
         @unknown default:
             manager.headingOrientation = .portrait
+        }
+    }
+
+    /// The home screen widget reads this status and the last coordinate from the App Group.
+    /// Reloads when permission changes, or when the fix moves about 300 meters.
+    private func publishWidgetLocation(_ location: CLLocation?, status: CLAuthorizationStatus, force: Bool) {
+        Tr3kOfflineCache.noteLocationStatus(statusName(status))
+        var shouldReload = force
+        if let location, location.horizontalAccuracy >= 0, location.horizontalAccuracy <= 500 {
+            let moved: CLLocationDistance
+            if let previous = widgetLocationNote {
+                moved = location.distance(from: previous)
+            } else {
+                moved = 10_000
+            }
+            let stale = widgetLocationNotedAt.map { Date().timeIntervalSince($0) >= 15 * 60 } ?? true
+            if force || moved >= 300 || stale {
+                Tr3kOfflineCache.noteCoordinate(
+                    latitude: location.coordinate.latitude,
+                    longitude: location.coordinate.longitude
+                )
+                widgetLocationNote = location
+                widgetLocationNotedAt = Date()
+                shouldReload = true
+            }
+        }
+        if shouldReload {
+            WidgetCenter.shared.reloadTimelines(ofKind: Tr3kOfflineCache.widgetKind)
         }
     }
 
