@@ -83,6 +83,15 @@ assert(widgetEntitlements.includes("group.app.tr3k.ios"), "app group on the widg
 
 const widgetPlist = readFileSync(join(root, "ios/App/Tr3kWidget/Info.plist"), "utf8");
 assert(widgetPlist.includes("com.apple.widgetkit-extension"), "home screen widget extension point");
+assert(widgetPlist.includes("NSLocationWhenInUseUsageDescription"), "widget location purpose");
+
+const widgetSwift = readFileSync(join(root, "ios/App/Tr3kWidget/Tr3kWidget.swift"), "utf8");
+assert(widgetSwift.includes("Enable location for nearby Tr3ks"), "widget location prompt");
+assert(widgetSwift.includes("byAdding: .hour"), "widget hourly timeline");
+assert(widgetSwift.includes("primaryLink"), "widget tap uses the shared link");
+
+const nearbyFeed = readFileSync(join(root, "plugins/tr3k-native/ios/Sources/Tr3kAppGroup/Tr3kNearbyFeed.swift"), "utf8");
+assert(nearbyFeed.includes("https://tr3k.app/api/nearby"), "widget uses the nearby API");
 
 const shim = readFileSync(join(root, "plugins/tr3k-native/ios/Sources/Tr3kNativePlugin/Tr3kNativeShim.swift"), "utf8");
 assert(shim.includes("version: 6"), "native shim version 6");
@@ -132,6 +141,8 @@ assert(nativeReadme.includes("getOfflineTreks"), "offline get is documented");
 assert(nativeReadme.includes("clearOfflineTreks"), "offline clear is documented");
 assert(nativeReadme.includes("signInWithApple"), "Sign in with Apple is documented");
 assert(nativeReadme.includes("group.app.tr3k.ios"), "app group is documented");
+assert(nativeReadme.includes("Enable location for nearby Tr3ks"), "widget prompt is documented");
+assert(nativeReadme.includes("/api/nearby"), "nearby API is documented for the widget");
 
 const project = readFileSync(join(root, "ios/App/App.xcodeproj/project.pbxproj"), "utf8");
 assert(project.includes("app.tr3k.ios.LiveActivity"), "Live Activity bundle id");

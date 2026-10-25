@@ -44,6 +44,88 @@ public enum Tr3kOfflineCache {
         return model(from: record)
     }
 
+    /// Last coordinate the play page or the location bridge stored for the widget.
+    public static func lastCoordinate() -> (latitude: Double, longitude: Double)? {
+        guard let record = loadRecord(key: defaultKey) else { return nil }
+        guard let latitude = coordinate(record["lat"], range: -90...90),
+              let longitude = coordinate(record["lng"], range: -180...180) else { return nil }
+        return (latitude, longitude)
+    }
+
+    /// `always`, `whenInUse`, `denied`, `restricted`, or `prompt`. Separate from the trek record so a web save cannot wipe it.
+    public static func noteLocationStatus(_ status: String) {
+        let trimmed = status.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 32 else { return }
+        defaults?.set(trimmed, forKey: locationStatusKey)
+    }
+
+    public static func locationStatus() -> String? {
+        guard let status = defaults?.string(forKey: locationStatusKey) else { return nil }
+        let trimmed = status.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Updates lat/lng on the default record without dropping nearby or the active Tr3k.
+    public static func noteCoordinate(latitude: Double, longitude: Double) {
+        guard coordinate(latitude, range: -90...90) != nil,
+              coordinate(longitude, range: -180...180) != nil else { return }
+        var raw = load(key: defaultKey)
+        if raw.isEmpty {
+            raw["nearby"] = [Any]()
+            raw["active"] = NSNull()
+        }
+        raw["key"] = defaultKey
+        raw["lat"] = latitude
+        raw["lng"] = longitude
+        _ = save(raw)
+    }
+
+    /// Merges an `/api/nearby` pool into the default record.
+    ///
+    /// Ids the play page already saved keep their themed `title`. A short new
+    /// list is ignored so a partial response cannot wipe a good snapshot.
+    public static func replaceNearby(_ pool: [[String: Any]], latitude: Double, longitude: Double) -> Tr3kWidgetModel {
+        guard coordinate(latitude, range: -90...90) != nil,
+              coordinate(longitude, range: -180...180) != nil else { return snapshot() }
+        let record = loadRecord(key: defaultKey) ?? [:]
+        let previous = sanitizeList(record["nearby"])
+        let poolIds = Set(pool.compactMap { string($0["id"]) })
+        var kept: [[String: Any]] = []
+        var seen = Set<String>()
+        for item in previous {
+            guard let id = string(item["id"]), poolIds.contains(id), seen.insert(id).inserted else { continue }
+            kept.append(item)
+            if kept.count == 12 { break }
+        }
+        if kept.count < 2 {
+            guard pool.count >= 4 || previous.isEmpty else { return snapshot() }
+            for item in roundRobin(pool, limit: 6) {
+                guard let slim = sanitizeRef(item), let id = string(slim["id"]), seen.insert(id).inserted else { continue }
+                kept.append(slim)
+                if kept.count == 6 { break }
+            }
+        }
+        guard !kept.isEmpty else { return snapshot() }
+        kept = kept.enumerated().map { index, item in
+            var copy = item
+            copy["order"] = index
+            return copy
+        }
+        var raw: [String: Any] = [
+            "key": defaultKey,
+            "v": intValue(record["v"]) ?? 1,
+            "at": Date().timeIntervalSince1970 * 1000,
+            "nearby": kept,
+            "lat": latitude,
+            "lng": longitude
+        ]
+        if let active = record["active"], !(active is NSNull) {
+            raw["active"] = active
+        }
+        _ = save(raw)
+        return snapshot()
+    }
+
     // MARK: - Record
 
     private static func sanitizeRecord(_ raw: [String: Any], key: String) -> [String: Any] {
@@ -71,6 +153,8 @@ public enum Tr3kOfflineCache {
         let items: [Any]
         if let list = value as? [Any] {
             items = list
+        } else if let list = value as? [[String: Any]] {
+            items = list.map { $0 as Any }
         } else if let list = value as? NSArray {
             items = list.map { $0 }
         } else {
@@ -176,6 +260,10 @@ public enum Tr3kOfflineCache {
         let items: [Any]
         if let list = value as? [Any] {
             items = list
+        } else if let list = value as? [[String: Any]] {
+            items = list.map { $0 as Any }
+        } else if let list = value as? NSArray {
+            items = list.map { $0 }
         } else {
             items = []
         }
@@ -198,9 +286,13 @@ public enum Tr3kOfflineCache {
     private static func place(_ value: Any?, tieBreak: Int = 0) -> Tr3kPlaceRef? {
         guard let raw = sanitizeRef(value), let id = string(raw["id"]) else { return nil }
         let kind = string(raw["kind"]) ?? "trek"
+        let title = string(raw["title"])
+        let placeName = firstString(raw, keys: ["name", "placeName", "place"])
+        let place = (title != nil && placeName != nil && placeName != title) ? placeName : nil
         return Tr3kPlaceRef(
             id: id,
-            name: firstString(raw, keys: ["name", "placeName", "place", "title"]) ?? "Tr3k",
+            name: title ?? placeName ?? "Tr3k",
+            place: place,
             kind: kind,
             category: string(raw["category"]),
             order: firstInt(raw, keys: ["order", "routeOrder"]),
@@ -210,10 +302,36 @@ public enum Tr3kOfflineCache {
         )
     }
 
+    /// One nearby Tr3k opens that Tr3k. Several open the play list. An active Tr3k is the link only when nothing nearby is saved.
     private static func primaryLink(active: Tr3kPlaceRef?, nearby: [Tr3kPlaceRef]) -> URL {
-        if let active { return active.link }
-        if nearby.count == 1, let only = nearby.first { return only.link }
+        if nearby.isEmpty, let active { return active.link }
+        if nearby.count == 1, active == nil, let only = nearby.first { return only.link }
         return Tr3kLinks.play
+    }
+
+    /// Nearest of each category, then the next nearest, so a cold list is not six parks.
+    private static func roundRobin(_ pool: [[String: Any]], limit: Int) -> [[String: Any]] {
+        var buckets: [String: [[String: Any]]] = [:]
+        var order: [String] = []
+        for item in pool {
+            let key = string(item["category"]) ?? "Tr3k"
+            if buckets[key] == nil { order.append(key) }
+            buckets[key, default: []].append(item)
+        }
+        var picked: [[String: Any]] = []
+        var round = 0
+        while picked.count < limit {
+            var added = false
+            for key in order {
+                guard let bucket = buckets[key], round < bucket.count else { continue }
+                picked.append(bucket[round])
+                added = true
+                if picked.count == limit { break }
+            }
+            if !added { break }
+            round += 1
+        }
+        return picked
     }
 
     // MARK: - Disk
@@ -225,6 +343,8 @@ public enum Tr3kOfflineCache {
     private static func storageKey(_ key: String) -> String {
         "cache.\(key)"
     }
+
+    private static let locationStatusKey = "widget.location.status"
 
     private static func snapshotFileURL() -> URL? {
         FileManager.default
@@ -369,6 +489,8 @@ public enum Tr3kOfflineCache {
 public struct Tr3kPlaceRef: Identifiable, Equatable {
     public let id: String
     public let name: String
+    /// Map place when `name` is the themed title.
+    public let place: String?
     public let kind: String
     public let category: String?
     public let order: Int?
@@ -381,32 +503,74 @@ public struct Tr3kWidgetModel: Equatable {
     public let active: Tr3kPlaceRef?
     public let nearby: [Tr3kPlaceRef]
     public let primaryLink: URL
+    /// True when the widget has nothing nearby to show until location is on.
+    public let needsLocation: Bool
 
     public var isEmpty: Bool { active == nil && nearby.isEmpty }
 
-    public static let empty = Tr3kWidgetModel(active: nil, nearby: [], primaryLink: Tr3kLinks.play)
+    public init(active: Tr3kPlaceRef?, nearby: [Tr3kPlaceRef], primaryLink: URL, needsLocation: Bool = false) {
+        self.active = active
+        self.nearby = nearby
+        self.primaryLink = primaryLink
+        self.needsLocation = needsLocation
+    }
+
+    /// Hides stale nearby rows. The saved record is left alone.
+    public func withholdingNearby() -> Tr3kWidgetModel {
+        Tr3kWidgetModel(
+            active: active,
+            nearby: [],
+            primaryLink: active?.link ?? Tr3kLinks.play,
+            needsLocation: true
+        )
+    }
+
+    /// Snapshot gate that does not touch Core Location. The timeline applies the live status.
+    public func gatedForSnapshot() -> Tr3kWidgetModel {
+        let stored = Tr3kOfflineCache.locationStatus()
+        if stored == "denied" || stored == "restricted" {
+            return withholdingNearby()
+        }
+        return self
+    }
+
+    public static let empty = Tr3kWidgetModel(active: nil, nearby: [], primaryLink: Tr3kLinks.play, needsLocation: true)
 
     public static let placeholder = Tr3kWidgetModel(
-        active: Tr3kPlaceRef(
-            id: "preview",
-            name: "Your Tr3k",
-            kind: "trek",
-            category: nil,
-            order: nil,
-            gameCopy: "Continue",
-            link: Tr3kLinks.play,
-            tieBreak: 0
-        ),
+        active: nil,
         nearby: [
             Tr3kPlaceRef(
-                id: "nearby",
-                name: "Tr3k nearby",
+                id: "sunset",
+                name: "Sunset Glow Walk",
+                place: "Bogan Park",
                 kind: "trek",
-                category: nil,
+                category: "Park",
+                order: 0,
+                gameCopy: nil,
+                link: Tr3kLinks.play,
+                tieBreak: 0
+            ),
+            Tr3kPlaceRef(
+                id: "after-dark",
+                name: "After Dark Statue Check",
+                place: nil,
+                kind: "trek",
+                category: "Monument",
                 order: 1,
                 gameCopy: nil,
                 link: Tr3kLinks.play,
                 tieBreak: 1
+            ),
+            Tr3kPlaceRef(
+                id: "grass",
+                name: "Touch Grass Grove Run",
+                place: nil,
+                kind: "trek",
+                category: "Park",
+                order: 2,
+                gameCopy: nil,
+                link: Tr3kLinks.play,
+                tieBreak: 2
             )
         ],
         primaryLink: Tr3kLinks.play
