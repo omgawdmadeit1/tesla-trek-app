@@ -1,8 +1,8 @@
 {
   "name": "tr3k-native",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
-  "description": "Tr3k native bridge: precise location, stop arrival alerts, X Live Drop, share and deep links, haptics, Live Activities, the home screen widget snapshot, the offline cache, Sign in with Apple, the AR pumpkin box, and a MapKit map.",
+  "description": "Tr3k native bridge: precise location, stop arrival alerts, spoken directions, X Live Drop, share and deep links, haptics, Live Activities, the home screen widget snapshot, the offline cache, Sign in with Apple, the AR pumpkin box, and a MapKit map.",
   "capacitor": {
     "ios": {
       "src": "ios"

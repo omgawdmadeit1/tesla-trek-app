@@ -1,4 +1,5 @@
 import ARKit
+import AVFoundation
 import Capacitor
 import CoreLocation
 import Tr3kActivityKit
@@ -32,6 +33,8 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
         CAPPluginMethod(name: "share", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getLastDeepLink", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "haptic", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "speak", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stopSpeaking", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startLiveActivity", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "updateLiveActivity", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "endLiveActivity", returnType: CAPPluginReturnPromise),
@@ -78,6 +81,8 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
     private var pendingSheetDrop: Tr3kLiveDrop?
     private var lastLiveDrop: [String: Any]?
     private var lastLiveDropAt: [String: TimeInterval] = [:]
+    /// True while the native map is up and GPS should continue with the screen locked.
+    private var keepBackgroundLocation = false
 
     override public func load() {
         NotificationCenter.default.addObserver(
@@ -94,10 +99,30 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
         )
         NotificationCenter.default.addObserver(
             self,
+            selector: #selector(appWillResignActive),
+            name: UIApplication.willResignActiveNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
             selector: #selector(appDidEnterBackground),
             name: UIApplication.didEnterBackgroundNotification,
             object: nil
         )
+        Tr3kSpeech.shared.onEvent = { [weak self] name, data in
+            guard let self else { return }
+            self.notifyListeners(name, data: data)
+            guard name == "speechFinish" else { return }
+            DispatchQueue.main.async {
+                // The arrival line is spoken after the map is dismissed. Release
+                // the session when that line ends so music and GPS return to normal.
+                guard self.mapController?.isMapVisible != true else { return }
+                guard !Tr3kSpeech.shared.isSpeaking else { return }
+                guard Tr3kSpeech.shared.sessionArmed else { return }
+                Tr3kSpeech.shared.disarmSession()
+                self.syncBackgroundNavigation()
+            }
+        }
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(appWillEnterForeground),
@@ -139,9 +164,33 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
         }
     }
 
-    /// Region alerts keep working in the background. Continuous GPS does not.
+    /// Re-arm spoken audio while Tr3k is still allowed to activate a session.
+    /// The screen lock happens immediately after this.
+    @objc private func appWillResignActive() {
+        guard navigationSessionActive() else { return }
+        if Tr3kSpeech.shared.sessionArmed {
+            Tr3kSpeech.shared.armSession()
+        }
+        syncBackgroundNavigation()
+    }
+
+    /// Region alerts keep working in the background. Continuous GPS stays on
+    /// only during navigation, so the page can speak the next direction.
     @objc private func appDidEnterBackground() {
         guard manager != nil else { return }
+        if navigationSessionActive() {
+            syncBackgroundNavigation()
+            guard isAuthorized(authStatus()) else { return }
+            if watching || mapController?.wantsFollow == true {
+                manager.startUpdatingLocation()
+            }
+            if mapController?.wantsFollowHeading == true {
+                applyHeadingOrientation()
+                manager.headingFilter = 5
+                manager.startUpdatingHeading()
+            }
+            return
+        }
         manager.stopUpdatingLocation()
         manager.stopUpdatingHeading()
     }
@@ -310,7 +359,7 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
     @objc func stopWatch(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
             self.watching = false
-            if self.pendingFixes.isEmpty && self.mapController?.wantsFollow != true {
+            if self.pendingFixes.isEmpty && self.mapController?.wantsFollow != true && !self.keepBackgroundLocation {
                 self.manager.stopUpdatingLocation()
             }
             call.resolve()
@@ -329,6 +378,7 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
             resolvePendingAuth(alwaysPrompted: false)
         }
         if isAuthorized(status) {
+            self.syncBackgroundNavigation()
             if watching || !pendingFixes.isEmpty || mapController?.wantsFollow == true {
                 manager.startUpdatingLocation()
             }
@@ -357,7 +407,7 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
             notifyListeners("location", data: payload)
         }
         mapController?.ingest(location: loc)
-        if !watching && pendingFixes.isEmpty && mapController?.wantsFollow != true {
+        if !watching && pendingFixes.isEmpty && mapController?.wantsFollow != true && !keepBackgroundLocation {
             manager.stopUpdatingLocation()
         }
     }
@@ -713,6 +763,44 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
         }
     }
 
+    // MARK: Spoken directions
+
+    @objc func speak(_ call: CAPPluginCall) {
+        let prompt = speechPrompt(from: call)
+        DispatchQueue.main.async {
+            let result = Tr3kSpeech.shared.speak(prompt)
+            self.syncBackgroundNavigation()
+            call.resolve(result)
+        }
+    }
+
+    @objc func stopSpeaking(_ call: CAPPluginCall) {
+        let word = call.getString("boundary") == "word" || call.getString("at") == "word"
+        DispatchQueue.main.async {
+            let result = Tr3kSpeech.shared.stop(immediate: !word)
+            self.syncBackgroundNavigation()
+            call.resolve(result)
+        }
+    }
+
+    private func speechPrompt(from call: CAPPluginCall) -> Tr3kSpeech.Prompt {
+        let muted = call.getBool("mute") == true || call.getBool("muted") == true
+        let avScale = call.getString("rateUnit") == "av" || call.getString("rateScale") == "av"
+        let rawRate = Float(call.getDouble("rate") ?? (avScale ? Double(AVSpeechUtteranceDefaultSpeechRate) : 1.05))
+        let rate = avScale ? rawRate : AVSpeechUtteranceDefaultSpeechRate * rawRate
+        return Tr3kSpeech.Prompt(
+            id: call.getString("id") ?? UUID().uuidString,
+            text: call.getString("text") ?? call.getString("utterance") ?? call.getString("message") ?? "",
+            rate: rate,
+            pitch: Float(call.getDouble("pitch") ?? 1),
+            volume: Float(call.getDouble("volume") ?? 1),
+            language: call.getString("lang") ?? call.getString("language") ?? call.getString("locale") ?? "en-US",
+            voice: call.getString("voice") ?? call.getString("voiceId"),
+            interrupt: call.getBool("interrupt") ?? false,
+            muted: muted
+        )
+    }
+
     @objc func startLiveActivity(_ call: CAPPluginCall) {
         let fields = call.jsObjectRepresentation
         Task { @MainActor in
@@ -837,6 +925,8 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
                 self.manager.requestWhenInUseAuthorization()
             }
             let snapshot = self.mapOnMain().show(in: parent, above: webView, options: call.jsObjectRepresentation)
+            self.syncBackgroundNavigation()
+            self.armSpeechIfVoiceOn()
             call.resolve(snapshot)
         }
     }
@@ -847,7 +937,10 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
                 call.resolve(["visible": false])
                 return
             }
-            call.resolve(map.hide())
+            let snapshot = map.hide()
+            Tr3kSpeech.shared.disarmSession()
+            self.syncBackgroundNavigation()
+            call.resolve(snapshot)
         }
     }
 
@@ -939,8 +1032,55 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
             }
         } else {
             manager.stopUpdatingHeading()
-            if !watching && pendingFixes.isEmpty {
+            if !watching && pendingFixes.isEmpty && !keepBackgroundLocation {
                 manager.stopUpdatingLocation()
+            }
+        }
+    }
+
+    /// The native map is the navigation session. A leftover voice line after
+    /// the map closes does not keep the GPS radio on.
+    private func navigationSessionActive() -> Bool {
+        mapController?.isMapVisible == true
+    }
+
+    /// Keep GPS running across the lock only while a trek is on screen.
+    /// `allowsBackgroundLocationUpdates` throws without the location background mode.
+    private func syncBackgroundNavigation() {
+        guard let manager else { return }
+        let modes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String]
+        let allow = navigationSessionActive() && modes?.contains("location") == true && isAuthorized(authStatus())
+        keepBackgroundLocation = allow
+        if allow {
+            manager.allowsBackgroundLocationUpdates = true
+            manager.showsBackgroundLocationIndicator = true
+            manager.pausesLocationUpdatesAutomatically = false
+            manager.activityType = .automotiveNavigation
+        } else {
+            manager.allowsBackgroundLocationUpdates = false
+            manager.showsBackgroundLocationIndicator = false
+            manager.pausesLocationUpdatesAutomatically = true
+            manager.activityType = .fitness
+        }
+    }
+
+    /// The page stores mute in `tr3k_voice_mute`. Arm immediately so a lock in the
+    /// next moment still has a playback session, then release it if voice is muted.
+    private func armSpeechIfVoiceOn() {
+        Tr3kSpeech.shared.armSession()
+        guard let webView = bridge?.webView else { return }
+        webView.evaluateJavaScript(
+            "(() => { try { return localStorage.getItem('tr3k_voice_mute') } catch (e) { return null } })()"
+        ) { [weak self] result, _ in
+            let muted = (result as? String) == "1"
+            DispatchQueue.main.async {
+                guard let self, self.mapController?.isMapVisible == true else { return }
+                if muted {
+                    Tr3kSpeech.shared.disarmSession()
+                } else {
+                    Tr3kSpeech.shared.armSession()
+                }
+                self.syncBackgroundNavigation()
             }
         }
     }
