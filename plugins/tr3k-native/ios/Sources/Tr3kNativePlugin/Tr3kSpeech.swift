@@ -221,7 +221,9 @@ final class Tr3kSpeech: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     private func emit(_ name: String, _ data: [String: Any]) {
-        let send = { self.onEvent?(name, data) }
+        let send: () -> Void = {
+            self.onEvent?(name, data)
+        }
         if Thread.isMainThread {
             send()
         } else {
