@@ -43,7 +43,7 @@ tabTrek.addEventListener("click", () => show("trek"));
 tabPack.addEventListener("click", () => show("pack"));
 
 document.querySelector("#parked").addEventListener("click", () => {
-  window.speechSynthesis?.cancel();
+  stopSpoken();
   const next = pending;
   pending = null;
   park.classList.add("hidden");
@@ -51,7 +51,7 @@ document.querySelector("#parked").addEventListener("click", () => {
 });
 
 document.querySelector("#keep-driving").addEventListener("click", () => {
-  window.speechSynthesis?.cancel();
+  stopSpoken();
   pending = null;
   show("trek");
 });
@@ -226,11 +226,24 @@ async function startWatch() {
 }
 
 function speak(text) {
+  const native = window.tr3kNative;
+  if (native && typeof native.speak === "function") {
+    Promise.resolve(native.speak({ text, interrupt: true, rate: 0.96 })).catch(() => {});
+    return;
+  }
   if (!("speechSynthesis" in window)) return;
   window.speechSynthesis.cancel();
   const utter = new SpeechSynthesisUtterance(text);
   utter.rate = 0.96;
   window.speechSynthesis.speak(utter);
+}
+
+function stopSpoken() {
+  window.speechSynthesis?.cancel();
+  const native = window.tr3kNative;
+  if (native && typeof native.stopSpeaking === "function") {
+    Promise.resolve(native.stopSpeaking()).catch(() => {});
+  }
 }
 
 function toast(message) {

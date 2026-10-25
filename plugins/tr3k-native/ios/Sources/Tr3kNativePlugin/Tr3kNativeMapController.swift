@@ -14,7 +14,7 @@ import UIKit
 /// elevation, which is Apple's Flyover-class terrain and 3D buildings where the
 /// device and city data support them. This does not use MapKit JS or a token.
 ///
-/// JS surface: plugins/tr3k-native/README.md (`window.tr3kNative`, shim version 5).
+/// JS surface: plugins/tr3k-native/README.md (`window.tr3kNative`, shim version 6).
 final class Tr3kNativeMapController: NSObject, MKMapViewDelegate {
     var onEvent: ((String, [String: Any], Bool) -> Void)?
     /// follow, followHeading
@@ -23,6 +23,9 @@ final class Tr3kNativeMapController: NSObject, MKMapViewDelegate {
 
     private(set) var wantsFollow = false
     private(set) var wantsFollowHeading = false
+
+    /// True while the MapKit view is on screen. That is an active Tr3k navigation.
+    var isMapVisible: Bool { visible }
 
     private let host = Tr3kMapHostView()
     private let mapView = MKMapView(frame: .zero)

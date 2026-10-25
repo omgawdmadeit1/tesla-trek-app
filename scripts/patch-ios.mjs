@@ -46,17 +46,26 @@ setString(
 setBool("ITSAppUsesNonExemptEncryption", "false");
 setBool("NSSupportsLiveActivities", "true");
 
-if (!plist.includes("<key>UIBackgroundModes</key>")) {
-  plist = plist.replace(
-    "</dict>\n</plist>",
-    "\t<key>UIBackgroundModes</key>\n\t<array>\n\t\t<string>location</string>\n\t</array>\n</dict>\n</plist>",
-  );
-} else if (!plist.includes("<string>location</string>")) {
-  plist = plist.replace(
-    "<key>UIBackgroundModes</key>\n\t<array>",
-    "<key>UIBackgroundModes</key>\n\t<array>\n\t\t<string>location</string>",
-  );
+function ensureBackgroundMode(mode) {
+  const item = `<string>${mode}</string>`;
+  if (!plist.includes("<key>UIBackgroundModes</key>")) {
+    plist = plist.replace(
+      "</dict>\n</plist>",
+      `\t<key>UIBackgroundModes</key>\n\t<array>\n\t\t${item}\n\t</array>\n</dict>\n</plist>`,
+    );
+    return;
+  }
+  if (!plist.includes(item)) {
+    plist = plist.replace(
+      "<key>UIBackgroundModes</key>\n\t<array>",
+      `<key>UIBackgroundModes</key>\n\t<array>\n\t\t${item}`,
+    );
+  }
 }
+
+// location: stop-region arrival alerts. audio: spoken directions with the screen locked.
+ensureBackgroundMode("location");
+ensureBackgroundMode("audio");
 
 if (!plist.includes("<key>LSApplicationQueriesSchemes</key>")) {
   plist = plist.replace(
@@ -155,4 +164,4 @@ if (!project.includes("CODE_SIGN_ENTITLEMENTS = App/App.entitlements;")) {
   );
 }
 writeFileSync(projectPath, project);
-console.log("patched iOS display name, permissions, arrival alerts, links, Live Activity, widget, bundle id, and team");
+console.log("patched iOS display name, permissions, arrival alerts, spoken directions, links, Live Activity, widget, bundle id, and team");

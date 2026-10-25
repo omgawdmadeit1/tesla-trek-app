@@ -2,8 +2,9 @@ import Foundation
 
 /// Injected at document start into every page the shell loads (including https://tr3k.app/play).
 /// Exposes window.tr3kNative and upgrades navigator.geolocation to native Core Location.
-/// Map, arrival, share, haptics, Live Activity, offline cache, Sign in with Apple,
-/// and X Live Drop methods (shim version 5) are documented in plugins/tr3k-native/README.md.
+/// Map, arrival, share, haptics, spoken directions, Live Activity, offline cache,
+/// Sign in with Apple, and X Live Drop methods (shim version 6) are documented
+/// in plugins/tr3k-native/README.md.
 enum Tr3kNativeShim {
     static let source = #"""
 (function () {
@@ -58,7 +59,7 @@ enum Tr3kNativeShim {
   var api = {
     __native: true,
     platform: "ios",
-    version: 5,
+    version: 6,
     getLocation: function (opts) { return call("getLocation", opts).then(toPosition); },
     watchLocation: function (onPos, onErr) {
       var id = nextId++;
@@ -139,6 +140,19 @@ enum Tr3kNativeShim {
     haptic: function (kind) {
       if (kind && typeof kind === "object") return call("haptic", kind);
       return call("haptic", { kind: kind || "medium" });
+    },
+    // Spoken directions (shim 6). tr3k.app/play say() calls speak({ text, interrupt: true })
+    // and returns without using web speech. Mute stays in the page (tr3k_voice_mute);
+    // the mute button and end navigation call stopSpeaking(). Pass mute or muted
+    // and the shell stays quiet and clears anything already talking.
+    // rate is the Web Speech rate (1 is normal). Omitted rate uses 1.05, matching the page.
+    // stopSpeaking() cuts immediately. stopSpeaking({ boundary: "word" }) finishes the word.
+    speak: function (opts) {
+      if (typeof opts === "string") return call("speak", { text: opts, interrupt: true });
+      return call("speak", opts || {});
+    },
+    stopSpeaking: function (opts) {
+      return call("stopSpeaking", opts || {});
     },
     startLiveActivity: function (opts) { return call("startLiveActivity", opts || {}); },
     updateLiveActivity: function (opts) { return call("updateLiveActivity", opts || {}); },

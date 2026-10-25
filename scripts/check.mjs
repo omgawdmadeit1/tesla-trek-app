@@ -61,6 +61,7 @@ assert(config.includes('"appName": "Tr3k"'), "app name");
 
 const plist = readFileSync(join(root, "ios/App/App/Info.plist"), "utf8");
 assert(plist.includes("<string>location</string>"), "background location mode");
+assert(plist.includes("<string>audio</string>"), "background audio mode for spoken directions");
 assert(plist.includes("<string>tr3k</string>"), "tr3k URL scheme");
 assert(plist.includes("<key>LSApplicationQueriesSchemes</key>"), "X app query schemes");
 assert(plist.includes("<string>twitter</string>"), "twitter query scheme");
@@ -84,8 +85,11 @@ const widgetPlist = readFileSync(join(root, "ios/App/Tr3kWidget/Info.plist"), "u
 assert(widgetPlist.includes("com.apple.widgetkit-extension"), "home screen widget extension point");
 
 const shim = readFileSync(join(root, "plugins/tr3k-native/ios/Sources/Tr3kNativePlugin/Tr3kNativeShim.swift"), "utf8");
-assert(shim.includes("version: 5"), "native shim version 5");
+assert(shim.includes("version: 6"), "native shim version 6");
+assert(!shim.includes("version: 5"), "shim version is no longer 5");
 assert(!shim.includes("version: 4"), "shim version is no longer 4");
+assert(shim.includes("speak: function"), "speak");
+assert(shim.includes("stopSpeaking: function"), "stopSpeaking");
 assert(shim.includes("setLiveDrop:"), "setLiveDrop");
 assert(shim.includes("openXLiveDrop:"), "openXLiveDrop");
 assert(shim.includes("onLiveDropUnlock:"), "onLiveDropUnlock");
@@ -109,7 +113,11 @@ assert(shim.includes("openSettings:"), "openSettings");
 assert(shim.includes("arStatus:"), "arStatus");
 
 const nativeReadme = readFileSync(join(root, "plugins/tr3k-native/README.md"), "utf8");
-assert(nativeReadme.includes("currently **5**"), "shim version 5 is documented");
+assert(nativeReadme.includes("currently **6**"), "shim version 6 is documented");
+assert(nativeReadme.includes("tr3kNative.speak"), "speak is documented");
+assert(nativeReadme.includes("stopSpeaking"), "stopSpeaking is documented");
+assert(nativeReadme.includes("UIBackgroundModes"), "background modes are documented");
+assert(nativeReadme.includes("`audio`"), "audio background mode is documented");
 assert(nativeReadme.includes("openXLiveDrop"), "X Live Drop is documented");
 assert(nativeReadme.includes("onLiveDropUnlock"), "live drop unlock is documented");
 assert(nativeReadme.includes("Only people at this stop."), "live drop microcopy is documented");
