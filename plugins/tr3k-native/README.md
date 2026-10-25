@@ -191,16 +191,22 @@ Arm the regions with Always location, then walk into the stop, or run the previe
 
 ## Live Activity
 
-Local ActivityKit activity for the navigation that is already on screen. No push token and no push-to-start. The Lock Screen and Dynamic Island show the latest instruction, distance, and ETA. Updates only happen while the web nav loop is running (the app in the foreground). The last content stays up after you leave the app until `endLiveActivity`.
+Local ActivityKit activity for the Tr3k that is already on screen. No push token and no push-to-start. The same `startLiveActivity` / `updateLiveActivity` / `endLiveActivity` calls are the channel. The shell also mirrors the navigation calls the page already makes (`showMap`, `setStops`, `setRoute`, `speak`, arrival, `openAR`, live drop, `hideMap`), so the lock screen keeps moving when the page does not send a separate update.
+
+Lock Screen and the expanded Island show the trek or quest name (the stop name when there is one), distance or ETA to the next stop, stop progress (`2/4`), and one next-action line: `Drive`, `Park`, `Hunt AR`, or `JOIN Live Drop`. The field is black. Type is white and silver. Gold is only the live-drop and rare-hunt states. Compact Island shows progress and the distance, or `Park` / `Hunt` / `Drop`.
+
+Tap the activity to open `https://tr3k.app/play/?trek=<id>` (or `?quest=<id>`). That is the same universal link as the home screen widget.
 
 ```js
 const started = await tr3kNative.startLiveActivity({
   trekId: "buford",
   trekName: "Buford",
-  instruction: "Continue on Buford Dr",
+  stopName: "Lenox Square",
+  stopIndex: 2,          // 1-based. stopCount is the total. "2/4" is also accepted as progressText
+  stopCount: 4,
   distanceText: "400 m",
   etaText: "5 min",
-  stopName: "Stop 1"
+  action: "Drive"        // Drive | Park | Hunt AR | JOIN Live Drop
 });
 // started.started is false with reason "unsupported" below iOS 16.2
 // or "disabled" when Live Activities are off in Settings
@@ -210,12 +216,18 @@ await tr3kNative.updateLiveActivity({
   distanceText: "80 m",
   etaText: "1 min"
 });
+// phase: "park" | "hunt" | "drop" | "complete" also sets the action.
+// rare: true, or rarity "rare" | "epic" | "legendary", turns a Hunt AR line gold.
+// kind: "quest" with questId / questName opens ?quest= on tap.
 
-await tr3kNative.endLiveActivity();                  // dismissal: "immediate"
-await tr3kNative.endLiveActivity({ dismissal: "default" });
+await tr3kNative.endLiveActivity();                  // removes it now, unless every stop has been arrived
+await tr3kNative.endLiveActivity({ dismissal: "immediate" });
+await tr3kNative.endLiveActivity({ dismissal: "default" }); // about 45 seconds, then gone
 ```
 
-`distance` and `eta` are accepted aliases of `distanceText` and `etaText`. Omitted fields keep the previous text. `trekName` defaults to "Tr3k".
+`distance` and `eta` are accepted aliases of `distanceText` and `etaText`. Omitted fields keep the previous text. `trekName` defaults to "Tr3k". `stopIndex` is 1-based.
+
+Lifecycle without a separate call: the activity starts once the native map is up and stops or a route are set (or when `startLiveActivity` runs). Spoken lines such as "In 500 feet, turn left" and "Park safely first" update the card. Arrival switches it to `Park`, or `JOIN Live Drop` when that stop has a drop. `openAR` switches it to `Hunt AR`. `hideMap` ends it (immediately on cancel, or a short `Complete` card when every stop was arrived). `endLiveActivity` does the same. A finished card leaves the lock screen after about 45 seconds. A cancel removes it now. Starting a trek replaces any activity already on screen.
 
 The widget extension bundle id is `app.tr3k.ios.LiveActivity`. It links the `Tr3kActivityKit` module, which is also what the shell uses, so the activity type matches. The app Info.plist key `NSSupportsLiveActivities` is true. There is no Push Notifications capability. iOS 15 still installs; `startLiveActivity` resolves `unsupported` there.
 
@@ -462,8 +474,8 @@ These behaved the same way before the map work:
 - `haptic(kind)` → `{ played, kind }`
 - `speak({ text, interrupt, mute, rate, lang })` → `{ spoken, id, queued?, reason? }`
 - `stopSpeaking({ boundary? })` → `{ stopped, speaking }`
-- `startLiveActivity({ trekId, trekName, instruction, distanceText, etaText, stopName })`
-- `updateLiveActivity(partial)` / `endLiveActivity({ dismissal })`
+- `startLiveActivity({ trekId, trekName, stopName, stopIndex, stopCount, distanceText, etaText, action })` — also `questId`, `kind`, `progressText`, `phase`, `rare`
+- `updateLiveActivity(partial)` / `endLiveActivity({ dismissal })` — `dismissal` `"immediate"` removes it now; `"default"` leaves a finished card for about 45 seconds
 - `isARSupported()` / `arStatus()` / `openAR({ tier, prize })` / `openSettings()`
 - `saveOfflineTreks({ key, v, at, nearby, active, lat, lng })` / `getOfflineTreks({ key })` / `clearOfflineTreks({ key })`
 - `signInWithApple()` / `getAppleSession()` / `signOutApple()`

@@ -140,6 +140,11 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
             guard let self else { return }
             self.notifyListeners("arrival", data: ["stopId": stopId], retainUntilConsumed: true)
             self.unlockArrivedStop(stopId)
+            if #available(iOS 16.2, *) {
+                Task { @MainActor in
+                    Tr3kLiveActivityMirror.shared.noteArrival(stopId)
+                }
+            }
         }
         DispatchQueue.main.async {
             self.ensureLocationManager()
@@ -407,6 +412,14 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
             notifyListeners("location", data: payload)
         }
         mapController?.ingest(location: loc)
+        if #available(iOS 16.2, *) {
+            let lat = loc.coordinate.latitude
+            let lng = loc.coordinate.longitude
+            let speed = loc.speed
+            Task { @MainActor in
+                Tr3kLiveActivityMirror.shared.noteLocation(lat: lat, lng: lng, speed: speed)
+            }
+        }
         if !watching && pendingFixes.isEmpty && mapController?.wantsFollow != true && !keepBackgroundLocation {
             manager.stopUpdatingLocation()
         }
@@ -447,6 +460,12 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
             self.ensureAlwaysAuthorization()
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
             self.ingestStopDrops(stops)
+            if #available(iOS 16.2, *) {
+                let rows = stops.map { $0 as Any }
+                Task { @MainActor in
+                    Tr3kLiveActivityMirror.shared.noteStops(rows)
+                }
+            }
             var result = Tr3kArrivalMonitor.shared.replaceStops(stops, radius: radius, title: title, body: body)
             let status = self.authStatus()
             result["location"] = self.statusName(status)
@@ -631,6 +650,12 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
         )
         lastLiveDrop = payload
         notifyListeners("liveDropUnlock", data: payload, retainUntilConsumed: true)
+        if #available(iOS 16.2, *) {
+            let stopId = drop.stopId
+            Task { @MainActor in
+                Tr3kLiveActivityMirror.shared.noteLiveDrop(stopId: stopId)
+            }
+        }
         scheduleLiveDropSheet(drop)
     }
 
@@ -770,6 +795,12 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
         DispatchQueue.main.async {
             let result = Tr3kSpeech.shared.speak(prompt)
             self.syncBackgroundNavigation()
+            if #available(iOS 16.2, *), !prompt.muted {
+                let line = prompt.text
+                Task { @MainActor in
+                    Tr3kLiveActivityMirror.shared.noteSpeech(line)
+                }
+            }
             call.resolve(result)
         }
     }
@@ -803,47 +834,37 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
 
     @objc func startLiveActivity(_ call: CAPPluginCall) {
         let fields = call.jsObjectRepresentation
+        guard #available(iOS 16.2, *) else {
+            call.resolve(["started": false, "reason": "unsupported"])
+            return
+        }
         Task { @MainActor in
-            guard #available(iOS 16.2, *) else {
-                call.resolve(["started": false, "reason": "unsupported"])
-                return
-            }
-            guard Tr3kLiveActivityController.activitiesEnabled() else {
-                call.resolve(["started": false, "reason": "disabled"])
-                return
-            }
-            let trekId = Tr3kLiveActivityController.text(fields["trekId"]) ?? ""
-            let trekName = Tr3kLiveActivityController.text(fields["trekName"]) ?? "Tr3k"
-            do {
-                let id = try await Tr3kLiveActivityController.start(trekId: trekId, trekName: trekName, fields: fields)
-                call.resolve(["started": true, "id": id])
-            } catch {
-                call.resolve(["started": false, "reason": error.localizedDescription])
-            }
+            let result = await Tr3kLiveActivityMirror.shared.start(fields)
+            call.resolve(result)
         }
     }
 
     @objc func updateLiveActivity(_ call: CAPPluginCall) {
         let fields = call.jsObjectRepresentation
+        guard #available(iOS 16.2, *) else {
+            call.resolve(["updated": false, "reason": "unsupported"])
+            return
+        }
         Task { @MainActor in
-            guard #available(iOS 16.2, *) else {
-                call.resolve(["updated": false, "reason": "unsupported"])
-                return
-            }
-            let updated = await Tr3kLiveActivityController.update(fields: fields)
-            call.resolve(["updated": updated])
+            let result = await Tr3kLiveActivityMirror.shared.update(fields)
+            call.resolve(result)
         }
     }
 
     @objc func endLiveActivity(_ call: CAPPluginCall) {
-        let immediate = (call.getString("dismissal") ?? "immediate") != "default"
+        let dismissal = call.getString("dismissal")
+        guard #available(iOS 16.2, *) else {
+            call.resolve(["ended": false, "reason": "unsupported"])
+            return
+        }
         Task { @MainActor in
-            guard #available(iOS 16.2, *) else {
-                call.resolve(["ended": false, "reason": "unsupported"])
-                return
-            }
-            await Tr3kLiveActivityController.end(immediate: immediate)
-            call.resolve(["ended": true])
+            let result = await Tr3kLiveActivityMirror.shared.end(dismissal: dismissal)
+            call.resolve(result)
         }
     }
 
@@ -869,6 +890,12 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
         let tier = call.getString("tier") ?? "common"
         let prize = call.getString("prize") ?? ""
         DispatchQueue.main.async {
+            if #available(iOS 16.2, *) {
+                let rare = tier == "rare" || tier == "epic" || tier == "legendary"
+                Task { @MainActor in
+                    Tr3kLiveActivityMirror.shared.noteHunt(rare: rare)
+                }
+            }
             guard let presenter = self.bridge?.viewController else {
                 call.resolve([
                     "opened": false,
@@ -924,9 +951,15 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
             if self.manager != nil, self.authStatus() == .notDetermined {
                 self.manager.requestWhenInUseAuthorization()
             }
-            let snapshot = self.mapOnMain().show(in: parent, above: webView, options: call.jsObjectRepresentation)
+            let options = call.jsObjectRepresentation
+            let snapshot = self.mapOnMain().show(in: parent, above: webView, options: options)
             self.syncBackgroundNavigation()
             self.armSpeechIfVoiceOn()
+            if #available(iOS 16.2, *) {
+                Task { @MainActor in
+                    Tr3kLiveActivityMirror.shared.noteMap(visible: true, fields: options)
+                }
+            }
             call.resolve(snapshot)
         }
     }
@@ -940,6 +973,11 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
             let snapshot = map.hide()
             Tr3kSpeech.shared.disarmSession()
             self.syncBackgroundNavigation()
+            if #available(iOS 16.2, *) {
+                Task { @MainActor in
+                    Tr3kLiveActivityMirror.shared.noteMap(visible: false, fields: [:])
+                }
+            }
             call.resolve(snapshot)
         }
     }
@@ -988,8 +1026,14 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
     }
 
     @objc func setRoute(_ call: CAPPluginCall) {
+        let options = call.jsObjectRepresentation
         DispatchQueue.main.async {
-            call.resolve(self.mapOnMain().setRoute(options: call.jsObjectRepresentation))
+            if #available(iOS 16.2, *) {
+                Task { @MainActor in
+                    Tr3kLiveActivityMirror.shared.noteRoute(options)
+                }
+            }
+            call.resolve(self.mapOnMain().setRoute(options: options))
         }
     }
 
@@ -1112,6 +1156,11 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
         DispatchQueue.main.async {
             let saved = Tr3kOfflineCache.save(raw)
             WidgetCenter.shared.reloadTimelines(ofKind: Tr3kOfflineCache.widgetKind)
+            if #available(iOS 16.2, *) {
+                Task { @MainActor in
+                    Tr3kLiveActivityMirror.shared.noteOffline(raw)
+                }
+            }
             call.resolve(saved)
         }
     }
