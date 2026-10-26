@@ -163,9 +163,12 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
     private func injectShim() {
         guard let webView = bridge?.webView else { return }
         let script = WKUserScript(source: Tr3kNativeShim.source, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        let duo = WKUserScript(source: Tr3kDuoScript.source, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         webView.configuration.userContentController.addUserScript(script)
+        webView.configuration.userContentController.addUserScript(duo)
         // Cover a page that already started loading before the plugin was ready.
         webView.evaluateJavaScript(Tr3kNativeShim.source) { [weak self] _, _ in
+            webView.evaluateJavaScript(Tr3kDuoScript.source, completionHandler: nil)
             guard let self, let lastDeepLink = self.lastDeepLink else { return }
             self.emitDeepLink(lastDeepLink)
         }
@@ -1134,6 +1137,8 @@ public class Tr3kNativePlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDel
         }
     }
 
+    /// Compass calibration for Core Location while navigation is following the heading.
+    /// The interface orientation here is the sensor axis, not a layout branch.
     private func applyHeadingOrientation() {
         guard let manager else { return }
         guard let orientation = bridge?.viewController?.view.window?.windowScene?.interfaceOrientation else {

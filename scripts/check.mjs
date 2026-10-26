@@ -58,6 +58,8 @@ assert(threw, "unknown rarity throws");
 const config = readFileSync(join(root, "capacitor.config.json"), "utf8");
 assert(config.includes('"appId": "app.tr3k.ios"'), "bundle id");
 assert(config.includes('"appName": "Tr3k"'), "app name");
+assert(config.includes('"preferredContentMode": "recommended"'), "web view uses the real view width");
+assert(!config.includes('"preferredContentMode": "mobile"'), "web view is not locked to a phone width");
 
 const plist = readFileSync(join(root, "ios/App/App/Info.plist"), "utf8");
 assert(plist.includes("<string>location</string>"), "background location mode");
@@ -94,7 +96,8 @@ const nearbyFeed = readFileSync(join(root, "plugins/tr3k-native/ios/Sources/Tr3k
 assert(nearbyFeed.includes("https://tr3k.app/api/nearby"), "widget uses the nearby API");
 
 const shim = readFileSync(join(root, "plugins/tr3k-native/ios/Sources/Tr3kNativePlugin/Tr3kNativeShim.swift"), "utf8");
-assert(shim.includes("version: 6"), "native shim version 6");
+assert(shim.includes("version: 7"), "native shim version 7");
+assert(!shim.includes("version: 6"), "shim version is no longer 6");
 assert(!shim.includes("version: 5"), "shim version is no longer 5");
 assert(!shim.includes("version: 4"), "shim version is no longer 4");
 assert(shim.includes("speak: function"), "speak");
@@ -122,7 +125,9 @@ assert(shim.includes("openSettings:"), "openSettings");
 assert(shim.includes("arStatus:"), "arStatus");
 
 const nativeReadme = readFileSync(join(root, "plugins/tr3k-native/README.md"), "utf8");
-assert(nativeReadme.includes("currently **6**"), "shim version 6 is documented");
+assert(nativeReadme.includes("currently **7**"), "shim version 7 is documented");
+assert(nativeReadme.includes("onSurface"), "Duo surface is documented");
+assert(nativeReadme.includes("tr3k-wide"), "wide home class is documented");
 assert(nativeReadme.includes("tr3kNative.speak"), "speak is documented");
 assert(nativeReadme.includes("stopSpeaking"), "stopSpeaking is documented");
 assert(nativeReadme.includes("UIBackgroundModes"), "background modes are documented");
@@ -211,6 +216,56 @@ assert(fastfile.includes("tr3k-widget-appstore"), "widget provisioning profile n
 assert(fastfile.includes("APPLE_ID_AUTH"), "Sign in with Apple capability");
 assert(fastfile.includes("group.app.tr3k.ios"), "app group in the signing lane");
 assert(!fastfile.includes("skip_waiting_for_build_processing: false"), "TestFlight still skips waiting");
+assert(fastfile.includes("MARKETING_VERSION=1.0.1"), "Duo marketing version");
+assert(fastfile.includes("TR3K_DUO_SDK"), "Duo SDK flag");
+assert(fastfile.includes("greater than 20022"), "build number floor");
+assert(fastfile.includes("skip_submission: true"), "lane does not submit for review");
+
+const duoScript = readFileSync(join(root, "plugins/tr3k-native/ios/Sources/Tr3kNativePlugin/Tr3kDuoScript.swift"), "utf8");
+assert(duoScript.includes("__tr3kApplySurface"), "surface hook");
+assert(duoScript.includes("tr3k-wide"), "wide class");
+assert(duoScript.includes("partiallyOpen"), "partial hinge pose");
+assert(duoScript.includes("tr3kcoach"), "hinge uses the coach line");
+assert(!duoScript.includes("window.orientation"), "duo script does not read orientation");
+assert(!duoScript.includes("UIScreen"), "duo script does not read UIScreen");
+
+const scene = readFileSync(join(root, "ios/App/App/SceneDelegate.swift"), "utf8");
+assert(scene.includes("UIWindow(windowScene: windowScene)"), "window comes from the scene");
+assert(scene.includes("Tr3kBridgeViewController"), "bridge follows the window");
+assert(scene.includes("horizontalSizeClass == .regular"), "wide layout uses the size class");
+assert(!scene.includes("UIScreen.main"), "scene does not size from the main screen");
+assert(scene.includes("UIHingeInteraction"), "hinge hook is present for the 27.1 SDK");
+assert(scene.includes("TR3K_DUO_SDK"), "hinge compiles only with the Duo SDK");
+
+assert(project.includes("MARKETING_VERSION = 1.0.1;"), "marketing version 1.0.1");
+assert(project.includes("CURRENT_PROJECT_VERSION = 20023;"), "build floor 20023");
+assert(!project.includes("MARKETING_VERSION = 1.0;"), "1.0 marketing version is replaced");
+
+const duoDoc = readFileSync(join(root, "docs/iphone-duo.md"), "utf8");
+assert(duoDoc.includes("Xcode 27.1"), "archive doc names Xcode 27.1");
+assert(duoDoc.includes("1398×2034"), "outer screenshot size");
+assert(duoDoc.includes("2007×2853"), "inner screenshot size");
+assert(duoDoc.includes("20023"), "doc names the build floor");
+assert(duoDoc.includes("Do not cancel"), "doc leaves the current review alone");
+
+const selector = readFileSync(join(root, "scripts/select-xcode.sh"), "utf8");
+assert(selector.includes("27.1"), "xcode selector knows 27.1");
+assert(selector.includes("TR3K_XCODE_DUO"), "xcode selector records the toolchain");
+
+const flightWorkflow = readFileSync(join(root, ".github/workflows/testflight.yml"), "utf8");
+assert(flightWorkflow.includes("select-xcode.sh"), "TestFlight selects Xcode");
+assert(flightWorkflow.includes("max(20023, 20000 + run_number)"), "TestFlight build is above 20022");
+const iosCheck = readFileSync(join(root, ".github/workflows/ios-build-check.yml"), "utf8");
+assert(iosCheck.includes("select-xcode.sh"), "unsigned build selects Xcode when present");
+
+function assertNoMainScreen(path) {
+  const text = readFileSync(path, "utf8");
+  assert(!text.includes("UIScreen.main"), `no UIScreen.main in ${path.slice(root.length)}`);
+}
+assertNoMainScreen(join(root, "ios/App/App/SceneDelegate.swift"));
+assertNoMainScreen(join(root, "ios/App/App/AppDelegate.swift"));
+assertNoMainScreen(join(root, "plugins/tr3k-native/ios/Sources/Tr3kNativePlugin/Tr3kNativePlugin.swift"));
+assertNoMainScreen(join(root, "plugins/tr3k-native/ios/Sources/Tr3kNativePlugin/Tr3kNativeMapController.swift"));
 
 const flight = readFileSync(join(root, "public/get/testflight.js"), "utf8");
 assert(flight.includes("export const TESTFLIGHT_URL"), "TESTFLIGHT_URL constant");

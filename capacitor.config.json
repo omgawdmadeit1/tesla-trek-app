@@ -5,7 +5,7 @@
   "backgroundColor": "#14110e",
   "ios": {
     "contentInset": "automatic",
-    "preferredContentMode": "mobile",
+    "preferredContentMode": "recommended",
     "scheme": "Tr3k",
     "backgroundColor": "#14110e",
     "allowsLinkPreview": false,

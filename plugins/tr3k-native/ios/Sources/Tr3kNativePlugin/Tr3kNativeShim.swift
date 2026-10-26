@@ -3,7 +3,7 @@ import Foundation
 /// Injected at document start into every page the shell loads (including https://tr3k.app/play).
 /// Exposes window.tr3kNative and upgrades navigator.geolocation to native Core Location.
 /// Map, arrival, share, haptics, spoken directions, Live Activity, offline cache,
-/// Sign in with Apple, and X Live Drop methods (shim version 6) are documented
+/// Sign in with Apple, and X Live Drop methods (shim version 7) are documented
 /// in plugins/tr3k-native/README.md.
 enum Tr3kNativeShim {
     static let source = #"""
@@ -59,7 +59,7 @@ enum Tr3kNativeShim {
   var api = {
     __native: true,
     platform: "ios",
-    version: 6,
+    version: 7,
     getLocation: function (opts) { return call("getLocation", opts).then(toPosition); },
     watchLocation: function (onPos, onErr) {
       var id = nextId++;
@@ -141,7 +141,7 @@ enum Tr3kNativeShim {
       if (kind && typeof kind === "object") return call("haptic", kind);
       return call("haptic", { kind: kind || "medium" });
     },
-    // Spoken directions (shim 6). tr3k.app/play say() calls speak({ text, interrupt: true })
+    // Spoken directions (shim 7). tr3k.app/play say() calls speak({ text, interrupt: true })
     // and returns without using web speech. Mute stays in the page (tr3k_voice_mute);
     // the mute button and end navigation call stopSpeaking(). Pass mute or muted
     // and the shell stays quiet and clears anything already talking.

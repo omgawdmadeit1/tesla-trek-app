@@ -21,6 +21,9 @@ jobs:
       - run: npm run build
       - run: npx cap sync ios
       - run: node scripts/patch-ios.mjs
+      - name: Select Xcode 27.1 when it is installed
+        run: bash scripts/select-xcode.sh
+
       - name: xcodebuild (generic iOS, no signing)
         run: |
           set -euo pipefail

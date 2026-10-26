@@ -34,7 +34,7 @@ p { margin: 0; }
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
+  padding: calc(10px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) 10px calc(14px + env(safe-area-inset-left));
   background: linear-gradient(#14110ee8, #14110e00);
   color: var(--paper);
   pointer-events: none;
@@ -227,8 +227,30 @@ body.driving .btn { min-height: 72px; font-size: 1.2rem; }
 body.driving .sheet h1, body.driving .gate h2 { font-size: 2rem; }
 body.driving .fine { font-size: 15px; }
 
+html.tr3k-wide .sheet,
+html.tr3k-wide .gate,
+html.tr3k-wide .tabs {
+  left: auto;
+  right: max(12px, env(safe-area-inset-right));
+  width: min(420px, 42vw);
+}
+html.tr3k-wide .sheet,
+html.tr3k-wide .gate {
+  top: calc(72px + env(safe-area-inset-top));
+  bottom: calc(72px + env(safe-area-inset-bottom));
+  max-height: none;
+}
 @media (min-width: 840px) {
-  .sheet, .gate { left: auto; width: min(420px, 40vw); right: 20px; }
+  .sheet, .gate, .tabs {
+    left: auto;
+    right: max(12px, env(safe-area-inset-right));
+    width: min(420px, 42vw);
+  }
+  .sheet, .gate {
+    top: calc(72px + env(safe-area-inset-top));
+    bottom: calc(72px + env(safe-area-inset-bottom));
+    max-height: none;
+  }
 }
 
 /* X Live Drop. Isolated from the map theme: black, white, system type, one button. */
