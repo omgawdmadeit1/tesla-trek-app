@@ -1,6 +1,6 @@
 # Tr3k native bridge
 
-iOS-only Capacitor plugin (`jsName` `Tr3kNative`). The shell injects `window.tr3kNative` at document start on every page, including `https://tr3k.app/play/`. Shim version is `window.tr3kNative.version` (currently **6**).
+iOS-only Capacitor plugin (`jsName` `Tr3kNative`). The shell injects `window.tr3kNative` at document start on every page, including `https://tr3k.app/play/`. Shim version is `window.tr3kNative.version` (currently **7**).
 
 Version 2 is the MapKit map (`MKMapCamera` pitch and Apple's 3D buildings). The browser keeps its own map. This plugin does not load MapKit JS and does not need a MapKit token.
 
@@ -11,6 +11,8 @@ Version 4 adds the on-device offline cache (the same record feeds the home scree
 Version 5 adds the X Live Drop. A stop can carry a Space or a group Chat. Arrival plays a strong haptic and emits `liveDropUnlock`. The page draws the moment, or the shell does when the page has not subscribed. `openXLiveDrop` hands off to the X app. There is no X token and no chat server.
 
 Version 6 adds spoken directions. `speak` and `stopSpeaking` use `AVSpeechSynthesizer`, so a prompt that has started keeps playing with the screen locked. The page at `https://tr3k.app/play/` already calls these when they exist.
+
+Version 7 adds the iPhone Duo surface. The shell marks `html.tr3k-wide` when the horizontal size class is regular, and sets `data-tr3k-vbar` from `verticalBarEdge` on an iOS 27.1 SDK build. `onSurface` receives `{ wide, width, height, scale, safe, vbar, hinge }`. A partially open hinge sends one `tr3kcoach` event with `event: "park"`. Layout uses the view size, not device orientation.
 
 ## Background location and arrival alerts
 

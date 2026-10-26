@@ -14,7 +14,7 @@ import UIKit
 /// elevation, which is Apple's Flyover-class terrain and 3D buildings where the
 /// device and city data support them. This does not use MapKit JS or a token.
 ///
-/// JS surface: plugins/tr3k-native/README.md (`window.tr3kNative`, shim version 6).
+/// JS surface: plugins/tr3k-native/README.md (`window.tr3kNative`, shim version 7).
 final class Tr3kNativeMapController: NSObject, MKMapViewDelegate {
     var onEvent: ((String, [String: Any], Bool) -> Void)?
     /// follow, followHeading

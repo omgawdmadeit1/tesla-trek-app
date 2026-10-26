@@ -8,7 +8,10 @@ on:
 jobs:
   ios:
     name: Sign and upload
-    runs-on: macos-latest
+    # GitHub's Xcode 27 preview image. Xcode 27.1 is the default at
+    # /Applications/Xcode_27.1.app and /Applications/Xcode.app, which is what
+    # scripts/select-xcode.sh and the TR3K_XCODE_DUO gate require.
+    runs-on: xcode-27
     timeout-minutes: 60
     env:
       FASTLANE_SKIP_UPDATE_CHECK: "1"
@@ -84,12 +87,27 @@ jobs:
           copy.write_text(raw)
           copy.chmod(0o600)
 
-          build_number = 20000 + int(os.environ["GITHUB_RUN_NUMBER"])
+          run_number = int(os.environ["GITHUB_RUN_NUMBER"])
+          build_number = max(20023, 20000 + run_number)
           with Path(os.environ["GITHUB_ENV"]).open("a") as handle:
               handle.write(f"ASC_KEY_PATH={path}\n")
               handle.write(f"BUILD_NUMBER={build_number}\n")
           print(f"API key file ready ({path.stat().st_size} bytes). Build number {build_number}.")
           PY
+
+      - name: Select Xcode 27.1 for the Duo SDK
+        run: bash scripts/select-xcode.sh
+
+      - name: Require the iOS 27.1 SDK before upload
+        run: |
+          set -euo pipefail
+          if [ "${TR3K_XCODE_DUO:-0}" != "1" ]; then
+            echo "TestFlight upload for the Duo submission needs Xcode 27.1 or newer."
+            echo "Active result from scripts/select-xcode.sh is TR3K_XCODE_DUO=${TR3K_XCODE_DUO:-unset}."
+            echo "Archive steps: docs/iphone-duo.md"
+            exit 1
+          fi
+          xcodebuild -version
 
       - name: Upload to TestFlight
         env:

@@ -36,6 +36,11 @@ final class Tr3kPumpkinARViewController: UIViewController, ARSCNViewDelegate {
         layoutChrome()
     }
 
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        sceneView.frame = view.bounds
+    }
+
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         guard ARWorldTrackingConfiguration.isSupported else {

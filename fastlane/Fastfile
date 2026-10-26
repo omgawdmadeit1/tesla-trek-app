@@ -26,6 +26,27 @@ platform :ios do
     keychain_password = SecureRandom.hex(24) if keychain_password.empty?
     build_number = ENV.fetch("BUILD_NUMBER")
     UI.user_error!("BUILD_NUMBER must be a number") unless build_number.match?(/\A\d+\z/)
+    UI.user_error!("BUILD_NUMBER must be greater than 20022") unless build_number.to_i > 20022
+
+    xcode_version = sh("xcodebuild", "-version", log: true)
+    duo_sdk = false
+    if xcode_version =~ /Xcode (\d+)\.(\d+)/
+      major = Regexp.last_match(1).to_i
+      minor = Regexp.last_match(2).to_i
+      duo_sdk = major > 27 || (major == 27 && minor >= 1)
+    end
+    unless duo_sdk || ENV["TR3K_ALLOW_OLDER_XCODE"] == "1"
+      UI.user_error!(
+        "iPhone Duo upload needs Xcode 27.1 or newer (iOS 27.1 SDK).\n" \
+        "#{xcode_version}\n" \
+        "scripts/select-xcode.sh selects it when it is installed. " \
+        "Archive steps: docs/iphone-duo.md. " \
+        "TR3K_ALLOW_OLDER_XCODE=1 archives without the Duo SDK and must not be submitted for the Duo badge."
+      )
+    end
+    if !duo_sdk && ENV["TR3K_ALLOW_OLDER_XCODE"] == "1"
+      UI.important("TR3K_ALLOW_OLDER_XCODE=1: this archive is not an iPhone Duo build.")
+    end
 
     signing_dir = File.join(ENV.fetch("RUNNER_TEMP", Dir.tmpdir), "tr3k-signing")
     FileUtils.mkdir_p(signing_dir)
@@ -163,11 +184,16 @@ platform :ios do
         # Do not set PRODUCT_BUNDLE_IDENTIFIER or PROVISIONING_PROFILE_SPECIFIER
         # here. Those xcargs apply to every target, including the Live Activity
         # and widget extensions, which have their own bundle ids and profiles.
-        xcargs: [
-          "DEVELOPMENT_TEAM=#{team_id}",
-          "CURRENT_PROJECT_VERSION=#{build_number}",
-          "CODE_SIGN_STYLE=Manual"
-        ].join(" "),
+        xcargs: begin
+          flags = [
+            "DEVELOPMENT_TEAM=#{team_id}",
+            "CURRENT_PROJECT_VERSION=#{build_number}",
+            "MARKETING_VERSION=1.0.1",
+            "CODE_SIGN_STYLE=Manual"
+          ]
+          flags << "SWIFT_ACTIVE_COMPILATION_CONDITIONS=TR3K_DUO_SDK" if duo_sdk
+          flags.join(" ")
+        end,
         export_options: {
           method: "app-store",
           teamID: team_id,
