@@ -8,7 +8,10 @@ on:
 jobs:
   ios:
     name: Sign and upload
-    runs-on: macos-latest
+    # GitHub's Xcode 27 preview image. Xcode 27.1 is the default at
+    # /Applications/Xcode_27.1.app and /Applications/Xcode.app, which is what
+    # scripts/select-xcode.sh and the TR3K_XCODE_DUO gate require.
+    runs-on: xcode-27
     timeout-minutes: 60
     env:
       FASTLANE_SKIP_UPDATE_CHECK: "1"
