@@ -11,7 +11,7 @@ Building with the iOS 27.1 SDK is what lets the system draw the app full-bleed a
 - `preferredContentMode` is `recommended`, so the remote page at `https://tr3k.app/play/` uses the real view width.
 - Regular width: Rolodex and the Start dock sit side by side on the home screen. During a Tr3k the map fills the leading side and the turn card sits in the trailing pane. Compact width keeps the single stack.
 - Safe areas pad the header, dock, and rails. When the binary is built with Xcode 27.1, `verticalBarEdge` is published as `data-tr3k-vbar`.
-- `UIHingeInteraction` is compiled only when the archive is built with Xcode 27.1 (`TR3K_DUO_SDK`). A partially open hinge parks the pet and sends one existing coach line (`tr3kcoach` / `park`). Devices without a hinge leave that path idle. Older Xcode skips the hook instead of failing the compile.
+- `UIHingeInteraction` is compiled only when the archive is built with Xcode 27.1 (`TR3K_DUO_SDK`). Every hinge and vertical-bar declaration is also marked `@available(iOS 27.1, *)` and called from `#available(iOS 27.1, *)`, so the iOS 15.0 deployment target still builds. A partially open hinge parks the pet and sends one existing coach line (`tr3kcoach` / `park`). Devices without a hinge leave that path idle. Older Xcode skips the hook instead of failing the compile.
 
 ## Toolchain check
 

@@ -236,6 +236,10 @@ assert(scene.includes("horizontalSizeClass == .regular"), "wide layout uses the 
 assert(!scene.includes("UIScreen.main"), "scene does not size from the main screen");
 assert(scene.includes("UIHingeInteraction"), "hinge hook is present for the 27.1 SDK");
 assert(scene.includes("TR3K_DUO_SDK"), "hinge compiles only with the Duo SDK");
+assert(scene.includes("@available(iOS 27.1, *)"), "Duo APIs are marked available on iOS 27.1");
+assert(scene.includes("if #available(iOS 27.1, *)"), "Duo APIs have a runtime availability check");
+assert(scene.includes("case .unknown:"), "hinge status switch includes unknown");
+assert(!scene.includes("var hingeInteraction: UIHingeInteraction"), "hinge type is not stored on the iOS 15 controller");
 
 assert(project.includes("MARKETING_VERSION = 1.0.1;"), "marketing version 1.0.1");
 assert(project.includes("CURRENT_PROJECT_VERSION = 20023;"), "build floor 20023");

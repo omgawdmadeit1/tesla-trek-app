@@ -37,7 +37,10 @@ final class Tr3kBridgeViewController: CAPBridgeViewController {
     private var lastHingeStatus: String?
     private var hingeCoachPending = false
     #if TR3K_DUO_SDK
-    private var hingeInteraction: UIHingeInteraction?
+    /// The view retains the interaction. A stored `UIHingeInteraction` on this
+    /// controller is unavailable below iOS 27.1, and a stored property cannot
+    /// carry its own availability while the deployment target stays iOS 15.0.
+    private var hingeInstalled = false
     #endif
 
     override func capacitorDidLoad() {
@@ -159,16 +162,7 @@ final class Tr3kBridgeViewController: CAPBridgeViewController {
     private func verticalBarEdgeLabel() -> String {
         #if TR3K_DUO_SDK
         if #available(iOS 27.1, *) {
-            switch traitCollection.verticalBarEdge {
-            case .leading:
-                return "leading"
-            case .trailing:
-                return "trailing"
-            case .unspecified:
-                return "none"
-            @unknown default:
-                return "none"
-            }
+            return verticalBarEdgeLabelOn27()
         }
         #endif
         return "none"
@@ -187,24 +181,44 @@ final class Tr3kBridgeViewController: CAPBridgeViewController {
 
     #if TR3K_DUO_SDK
     private func installHingeIfAvailable() {
-        guard hingeInteraction == nil else { return }
+        guard !hingeInstalled else { return }
         if #available(iOS 27.1, *) {
-            let interaction = UIHingeInteraction { [weak self] _, update in
-                guard let self else { return }
-                guard let hinge = update.hinge else {
-                    self.noteHinge(nil)
-                    return
-                }
-                self.noteHinge([
-                    "status": Self.hingeStatusName(hinge.status),
-                    "angle": Double(hinge.angle)
-                ])
-            }
-            view.addInteraction(interaction)
-            hingeInteraction = interaction
+            installHinge()
+            hingeInstalled = true
         }
     }
 
+    @available(iOS 27.1, *)
+    private func verticalBarEdgeLabelOn27() -> String {
+        switch traitCollection.verticalBarEdge {
+        case .leading:
+            return "leading"
+        case .trailing:
+            return "trailing"
+        case .unspecified:
+            return "none"
+        @unknown default:
+            return "none"
+        }
+    }
+
+    @available(iOS 27.1, *)
+    private func installHinge() {
+        let interaction = UIHingeInteraction { [weak self] _, update in
+            guard let self else { return }
+            guard let hinge = update.hinge else {
+                self.noteHinge(nil)
+                return
+            }
+            self.noteHinge([
+                "status": Self.hingeStatusName(hinge.status),
+                "angle": Double(hinge.angle)
+            ])
+        }
+        view.addInteraction(interaction)
+    }
+
+    @available(iOS 27.1, *)
     private static func hingeStatusName(_ status: UIHinge.Status) -> String {
         switch status {
         case .closed:
@@ -213,6 +227,8 @@ final class Tr3kBridgeViewController: CAPBridgeViewController {
             return "partiallyOpen"
         case .fullyOpen:
             return "fullyOpen"
+        case .unknown:
+            return "unknown"
         @unknown default:
             return "unknown"
         }
