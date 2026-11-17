@@ -63,9 +63,19 @@ function ensureBackgroundMode(mode) {
   }
 }
 
-// location: stop-region arrival alerts. audio: spoken directions with the screen locked.
+function removeBackgroundMode(mode) {
+  const key = plist.indexOf("<key>UIBackgroundModes</key>");
+  if (key === -1) return;
+  const end = plist.indexOf("</array>", key);
+  const block = plist.slice(key, end);
+  const cleaned = block.replace(new RegExp(`\\n\\t*<string>${mode}</string>`, "g"), "");
+  plist = plist.slice(0, key) + cleaned + plist.slice(end);
+}
+
+// location: stop-region arrival alerts. Tr3k does not declare background audio
+// (App Review Guideline 2.5.4), so drop `audio` if an older plist still has it.
 ensureBackgroundMode("location");
-ensureBackgroundMode("audio");
+removeBackgroundMode("audio");
 
 if (!plist.includes("<key>LSApplicationQueriesSchemes</key>")) {
   plist = plist.replace(

@@ -63,7 +63,7 @@ assert(!config.includes('"preferredContentMode": "mobile"'), "web view is not lo
 
 const plist = readFileSync(join(root, "ios/App/App/Info.plist"), "utf8");
 assert(plist.includes("<string>location</string>"), "background location mode");
-assert(plist.includes("<string>audio</string>"), "background audio mode for spoken directions");
+assert(!plist.includes("<string>audio</string>"), "no background audio mode (Guideline 2.5.4)");
 assert(plist.includes("<string>tr3k</string>"), "tr3k URL scheme");
 assert(plist.includes("<key>LSApplicationQueriesSchemes</key>"), "X app query schemes");
 assert(plist.includes("<string>twitter</string>"), "twitter query scheme");
@@ -131,7 +131,7 @@ assert(nativeReadme.includes("tr3k-wide"), "wide home class is documented");
 assert(nativeReadme.includes("tr3kNative.speak"), "speak is documented");
 assert(nativeReadme.includes("stopSpeaking"), "stopSpeaking is documented");
 assert(nativeReadme.includes("UIBackgroundModes"), "background modes are documented");
-assert(nativeReadme.includes("`audio`"), "audio background mode is documented");
+assert(nativeReadme.includes("does not declare the `audio` background mode"), "no audio background mode is documented");
 assert(nativeReadme.includes("openXLiveDrop"), "X Live Drop is documented");
 assert(nativeReadme.includes("onLiveDropUnlock"), "live drop unlock is documented");
 assert(nativeReadme.includes("Only people at this stop."), "live drop microcopy is documented");

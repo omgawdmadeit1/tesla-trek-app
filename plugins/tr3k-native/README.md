@@ -10,7 +10,7 @@ Version 4 adds the on-device offline cache (the same record feeds the home scree
 
 Version 5 adds the X Live Drop. A stop can carry a Space or a group Chat. Arrival plays a strong haptic and emits `liveDropUnlock`. The page draws the moment, or the shell does when the page has not subscribed. `openXLiveDrop` hands off to the X app. There is no X token and no chat server.
 
-Version 6 adds spoken directions. `speak` and `stopSpeaking` use `AVSpeechSynthesizer`, so a prompt that has started keeps playing with the screen locked. The page at `https://tr3k.app/play/` already calls these when they exist.
+Version 6 adds spoken directions. `speak` and `stopSpeaking` use `AVSpeechSynthesizer`, and speak while Tr3k is open during navigation. The page at `https://tr3k.app/play/` already calls these when they exist.
 
 Version 7 adds the iPhone Duo surface. The shell marks `html.tr3k-wide` when the horizontal size class is regular, and sets `data-tr3k-vbar` from `verticalBarEdge` on an iOS 27.1 SDK build. `onSurface` receives `{ wide, width, height, scale, safe, vbar, hinge }`. A partially open hinge sends one `tr3kcoach` event with `event: "park"`. Layout uses the view size, not device orientation.
 
@@ -54,7 +54,7 @@ Info.plist purpose strings:
 - When In Use: nearby hunts, turn-by-turn directions, and reaching each Tr3k stop.
 - Always: Tr3k stop arrival alerts while the app is in the background or not open. Tr3k only watches the stops on the current hunt.
 
-`UIBackgroundModes` includes `location` so those region events can wake the app, and `audio` so spoken directions can continue with the screen locked. Outside an active navigation the shell does not keep the GPS radio on in the background; follow and `watchLocation` pause until Tr3k is open again. During navigation (the native map is on screen) location keeps updating with the screen locked, so the page can speak the next line. iOS shows the background location indicator while that is happening. There is no new permission prompt. The When In Use purpose string already covers turn-by-turn directions.
+`UIBackgroundModes` includes `location` so those region events can wake the app. Tr3k does not declare the `audio` background mode. Outside an active navigation the shell does not keep the GPS radio on in the background; follow and `watchLocation` pause until Tr3k is open again. During navigation (the native map is on screen) location keeps updating with the screen locked, so the page can speak the next line. iOS shows the background location indicator while that is happening. There is no new permission prompt. The When In Use purpose string already covers turn-by-turn directions.
 
 ## Spoken directions
 
@@ -75,13 +75,13 @@ await tr3kNative.stopSpeaking();
 
 `rate` is the Web Speech rate. `1` is normal. The page omits it, and the shell uses `1.05`. Pass `rateUnit: "av"` to set `AVSpeechUtterance.rate` directly (0 to 1). `lang` defaults to `en-US`. The shell prefers a premium or enhanced voice for that language. `stopSpeaking({ boundary: "word" })` finishes the current word. The default cut is immediate.
 
-The audio session category is `.playback` with mode `.spokenAudio` and options `.duckOthers` and `.interruptSpokenAudioAndMixWithOthers`. Playback is what iOS requires for audio to continue in the background. Spoken-audio mode is the continuous-speech mode. Ducking keeps music playing underneath at a lower volume instead of stopping it. The session is armed when navigation starts (unless voice is muted) and released on mute, `stopSpeaking`, or `hideMap`, which is when other audio returns to full volume.
+The audio session category is `.playback` with mode `.spokenAudio` and options `.duckOthers` and `.interruptSpokenAudioAndMixWithOthers`. Playback keeps prompts audible with the ring/silent switch on. Spoken-audio mode is the continuous-speech mode. Ducking keeps music playing underneath at a lower volume instead of stopping it. The session is armed when navigation starts (unless voice is muted) and released on mute, `stopSpeaking`, or `hideMap`, which is when other audio returns to full volume.
 
-Info.plist `UIBackgroundModes` must contain `audio` in addition to `location`. `scripts/patch-ios.mjs` puts both back after `npx cap sync ios`. No entitlement is required for the audio background mode.
+Info.plist `UIBackgroundModes` contains only `location`. Tr3k does not declare the `audio` background mode (App Review Guideline 2.5.4), and `scripts/patch-ios.mjs` re-adds `location` and strips `audio` after `npx cap sync ios`.
 
 `speechStart` and `speechFinish` are optional listeners (`speechFinish.reason` is `finished` or `cancelled`). The play page does not wait on them.
 
-With the screen locked, a sentence that has started finishes. Later lines play when a location update reaches the page. iOS can still suspend the web view between prompts if it decides the app is idle. Tr3k keeps the playback session active and keeps GPS on for the open navigation so those updates can arrive. This is as far as a web navigation loop can go under iOS background rules. Tr3k does not play a silent loop to stay awake.
+Spoken directions are a foreground feature. Without the `audio` background mode, iOS may silence a prompt once Tr3k leaves the screen; the next line plays when Tr3k is open again. A failed session activation is caught and the call resolves without speaking, so nothing crashes. Tr3k does not play a silent loop to stay awake.
 
 ## Share sheet and deep links
 

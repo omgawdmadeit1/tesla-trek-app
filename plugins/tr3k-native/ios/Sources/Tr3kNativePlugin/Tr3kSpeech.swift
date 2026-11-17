@@ -4,12 +4,12 @@ import UIKit
 
 /// Spoken turn-by-turn prompts for Tr3k.
 ///
-/// `AVSpeechSynthesizer` keeps talking when the screen locks as long as the
-/// audio session category is `.playback` and Info.plist `UIBackgroundModes`
-/// contains `audio`. `.voicePrompt` is the navigation mode on paper, but iOS
-/// treats it as a short foreground interruption and cuts it off in the
-/// background. `.spokenAudio` with ducking is the mode that continues, and
-/// other audio stays mixed in underneath at a lower volume.
+/// Tr3k does not declare the `audio` background mode (App Review Guideline
+/// 2.5.4), so spoken prompts are a foreground feature: iOS may silence them
+/// once the app leaves the screen. The `.playback` category keeps prompts
+/// audible with the silent switch on, and `.spokenAudio` with ducking keeps
+/// other audio mixed in underneath at a lower volume. Session activation
+/// failures are caught and the prompt is skipped.
 ///
 /// The session stays active from the first armed prompt until `disarmSession`
 /// (mute or end navigation). Deactivating between sentences lets iOS drop the
